@@ -694,7 +694,7 @@ export default function Kids() {
                 <Text style={styles.sectionTitle}>📊 Quiz History</Text>
                 {Object.entries(quizzes).length === 0 && (
                   <View style={styles.emptyBox}>
-                    <Text style={styles.emptyText}>You haven't added any quizzes yet.</Text>
+                    <Text style={styles.emptyText}>You have not added any quizzes yet.</Text>
                   </View>
                 )}
                 {Object.entries(quizzes).map(([id, quiz]) => (
