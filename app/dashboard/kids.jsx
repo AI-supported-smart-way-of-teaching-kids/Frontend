@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  SafeAreaView,
   ActivityIndicator,
   Image,
   Animated,
