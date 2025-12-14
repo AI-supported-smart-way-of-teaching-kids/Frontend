@@ -1,0 +1,13 @@
+name: CI
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  frontend:
+    uses: AI-supported-smart-way-of-teaching-kids/.github/.github/workflows/frontend-ci.yml@main
+    with:
+      node-version: '20'
+
