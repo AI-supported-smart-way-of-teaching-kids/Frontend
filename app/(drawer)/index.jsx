@@ -24,7 +24,7 @@ export default function Index() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, slideAnim]);
 
   const dynamicStyles = StyleSheet.create({
     container: { flex: 1 },
