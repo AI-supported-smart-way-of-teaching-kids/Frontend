@@ -33,20 +33,6 @@ const STORAGE = {
 // Pressable with subtle scale animation
 const AnimatedPressable = ({ children, onPress, style }) => {
   const scale = useRef(new Animated.Value(1)).current;
-  const onPressIn = () =>
-    Animated.timing(scale, {
-      toValue: 0.975,
-      duration: 120,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start();
-  const onPressOut = () =>
-    Animated.timing(scale, {
-      toValue: 1,
-      duration: 120,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start();
   return (
     <Animated.View style={[{ transform: [{ scale }] }, style]}>
       <TouchableOpacity activeOpacity={0.9} onPress={onPress}>
@@ -65,7 +51,7 @@ const ProgressBar = ({ progress }) => {
       easing: Easing.out(Easing.quad),
       useNativeDriver: false,
     }).start();
-  }, [progress]);
+  }, [progress, widthAnim]);
   return (
     <View style={styles.progressWrap}>
       <Animated.View
@@ -708,7 +694,7 @@ export default function Kids() {
                 <Text style={styles.sectionTitle}>📊 Quiz History</Text>
                 {Object.entries(quizzes).length === 0 && (
                   <View style={styles.emptyBox}>
-                    <Text style={styles.emptyText}>You have not added any quizzes yet.</Text>
+                    <Text style={styles.emptyText}>You haven't added any quizzes yet.</Text>
                   </View>
                 )}
                 {Object.entries(quizzes).map(([id, quiz]) => (

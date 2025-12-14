@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useUser } from '../../contexts/UserContext';
-import { useTheme } from '../../contexts/ThemeContext';
+
 import { useTranslation } from 'react-i18next';
 export default function Exit() {
   const { logout } = useUser();

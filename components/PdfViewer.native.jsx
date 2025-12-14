@@ -1,6 +1,14 @@
 import React from "react";
-import { View, StyleSheet, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator } from "react-native";
 import { WebView } from "react-native-webview";
+
+const styles = {
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+};
 
 export default function PdfViewer({ source, onError, style }) {
   if (!source || !source.uri) {

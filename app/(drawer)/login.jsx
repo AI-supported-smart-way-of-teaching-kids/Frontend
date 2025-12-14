@@ -174,7 +174,7 @@ export default function LoginPage() {
         ])
       ).start();
     }
-  }, [role]);
+  }, [role, logoAnim, pulseAnim]);
   const roleIcons = { kid: "happy-outline", teacher: "school" };
   const roleColors = {
     kid: ["#FFB6C1", "#FF87A0", "#FF69B4"],

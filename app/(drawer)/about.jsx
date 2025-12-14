@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Animated, ScrollView } from "react-native";
+import { Text, StyleSheet, Animated, ScrollView } from "react-native";
 import React, { useRef, useEffect } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,7 +15,7 @@ export default function About() {
       duration: 700,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   const dynamicStyles = StyleSheet.create({
     scroll: {

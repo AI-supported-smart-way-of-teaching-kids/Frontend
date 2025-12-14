@@ -45,7 +45,7 @@ export default function Profile() {
       else setCheckingRole(false);
     };
     checkAccess();
-  }, []);
+  }, [router]);
 
   if (checkingRole) {
     return (
@@ -120,7 +120,7 @@ export default function Profile() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
   headerTitle: { fontSize: 20, fontWeight: "600" },
   profileSection: { alignItems: "center", borderRadius: 20, padding: 20, marginBottom: 20, elevation: 3 },
   avatar: { width: 90, height: 90, borderRadius: 45, justifyContent: "center", alignItems: "center", marginBottom: 10, overflow: "hidden" },

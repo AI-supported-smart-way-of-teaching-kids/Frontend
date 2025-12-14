@@ -34,24 +34,10 @@ const STORAGE = {
 // small AnimatedPressable (copy of Kids style)
 const AnimatedPressable = ({ children, onPress, style }) => {
   const scale = useRef(new Animated.Value(1)).current;
-  const onPressIn = () =>
-    Animated.timing(scale, {
-      toValue: 0.98,
-      duration: 120,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start();
-  const onPressOut = () =>
-    Animated.timing(scale, {
-      toValue: 1,
-      duration: 120,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start();
 
   return (
     <Animated.View style={[{ transform: [{ scale }] }, style]}>
-      <TouchableOpacity activeOpacity={0.9} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
+      <TouchableOpacity activeOpacity={0.9} onPress={onPress}>
         {children}
       </TouchableOpacity>
     </Animated.View>

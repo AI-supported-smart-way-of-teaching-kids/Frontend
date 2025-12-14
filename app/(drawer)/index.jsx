@@ -72,23 +72,4 @@ export default function Index() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  image: { flex: 1, justifyContent: "center", alignItems: "center", width: "100%", height: "100%",},
-  content: { alignItems: "center" }, // ensures button is clickable
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "black",
-    marginBottom: 30,
-    textAlign: "center",
-  },
-  button: {
-    backgroundColor: "#9a8d6fff",
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 10,
-    elevation: 2,
-  },
-  buttonText: { color: "white", fontWeight: "bold", fontSize: 30 },
-});
+
