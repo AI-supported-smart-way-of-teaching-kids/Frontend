@@ -1032,7 +1032,6 @@ const styles = StyleSheet.create({
   itemTitle: { fontWeight: "800" },
   emptyBox: { marginTop: 18, padding: 18, alignItems: "center", justifyContent: "center" },
   emptyText: { marginTop: 8, color: "#777", fontSize: 15, fontWeight: "600" },
-  cardTitle: { fontWeight: "900", fontSize: 16 },
   lessonTitle: { fontSize: 22, fontWeight: "900" },
   lessonDesc: { marginTop: 10, fontSize: 16, lineHeight: 22, color: "#444" },
   smallBtn: { padding: 10, backgroundColor: "#4c1d95", borderRadius: 8 },
