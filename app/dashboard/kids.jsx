@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  SafeAreaView,
   ActivityIndicator,
   Image,
   Animated,
@@ -16,6 +15,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Video } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
