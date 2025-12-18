@@ -1,0 +1,24 @@
+{
+  "teacher": {
+    "login_header": "Login to Teacher Dashboard",
+    "login_button": "Login",
+    "dashboard_header": "Teacher Dashboard",
+    "upload_video": "Upload Video",
+    "upload_lesson": "Upload Lesson",
+    "create_quiz": "Create Quiz",
+    "messages": "Messages",
+    "upload_video_header": "Upload Video",
+    "video_title_placeholder": "Video Title",
+    "pick_video_button": "Pick Video from Device",
+    "upload_lesson_header": "Upload Lesson",
+    "lesson_title_placeholder": "Lesson Title",
+    "pick_lesson_button": "Pick Lesson File",
+    "create_quiz_header": "Create Quiz",
+    "question_placeholder": "Question",
+    "answer_placeholder": "Answer",
+    "add_quiz_button": "Add Quiz",
+    "chat_header": "Chat with Parents",
+    "message_placeholder": "Type a message...",
+    "send_button": "Send"
+  }
+}

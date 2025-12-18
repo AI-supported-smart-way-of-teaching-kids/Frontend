@@ -1,0 +1,10 @@
+{
+  "settings": {
+    "title": "Settings",
+    "dark_mode": "Dark Mode",
+    "language": "Language",
+    "tigrigna": "Tigrigna",
+    "english": "English",
+    "info": "Use the toggles above to switch between light/dark mode and English/Tigrigna."
+  }
+}
