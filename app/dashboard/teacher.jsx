@@ -21,6 +21,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 
 const STORAGE = {
   LESSONS: "@app_lessons_v1",
@@ -48,6 +49,7 @@ export default function TeacherDashboard() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
 
   // Data
   const [lessons, setLessons] = useState([]);
@@ -86,6 +88,37 @@ export default function TeacherDashboard() {
   const [progress, setProgress] = useState([]);
   const [studentProgress, setStudentProgress] = useState({}); // { studentId: { name, lessonsCompleted, videosCompleted, quizResults } }
 
+  // Pick profile photo directly from dashboard
+  const pickProfilePhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission required", "Please allow gallery access.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled) {
+        const uri = result.assets[0].uri;
+        // Load existing profile
+        const stored = await AsyncStorage.getItem("@app_profile");
+        let data = stored ? JSON.parse(stored) : {};
+        // Update only photo
+        data.photo = uri;
+        // Save back
+        await AsyncStorage.setItem("@app_profile", JSON.stringify(data));
+        // Update state
+        setProfile(data);
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   // load stored data
   useEffect(() => {
     (async () => {
@@ -96,6 +129,7 @@ export default function TeacherDashboard() {
           AsyncStorage.getItem(STORAGE.QUIZZES),
           AsyncStorage.getItem(STORAGE.PROGRESS),
           AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS),
+
         ]);
         setLessons(rawLessons ? JSON.parse(rawLessons) : []);
         setVideos(rawVideos ? JSON.parse(rawVideos) : []);
@@ -109,6 +143,19 @@ export default function TeacherDashboard() {
       }
     })();
   }, []);
+useFocusEffect(
+  React.useCallback(() => {
+    const loadProfile = async () => {
+      try {
+        const stored = await AsyncStorage.getItem("@app_profile_v1");
+        if (stored) setProfile(JSON.parse(stored));
+      } catch (e) {
+        console.warn("Failed to load profile", e);
+      }
+    };
+    loadProfile();
+  }, [])
+);
 
   // generic save helpers
   const persist = async (key, value) => {
@@ -447,21 +494,30 @@ export default function TeacherDashboard() {
       {/* header */}
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          <Image 
-            source={require("../../assets/images/kidsicon.jpg")} 
+          <Image
+            source={require("../../assets/images/logo.png")}
             style={{ width: 40, height: 40, borderRadius: 20, marginRight: 12 }}
             resizeMode="cover"
           />
-          <Text style={styles.headerText}>Teacher Dashboard</Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <TouchableOpacity onPress={() => router.push("/profile")} style={styles.profileBtn}>
-            <Ionicons name="person-circle-outline" size={28} color="#4c1d95" />
+          <TouchableOpacity
+            onPress={() => router.push("/profile")}
+            accessibilityLabel="Go to profile"
+            style={{ marginRight: 10 }}
+          >
+            {profile?.photo ? (
+              <Image source={{ uri: profile.photo }} style={styles.profilePhoto} />
+            ) : (
+              <Ionicons name="person-circle-outline" size={44} color="#1d9567ff" />
+            )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.replace("/(drawer)/login")} style={styles.logoutBtn}>
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerHi}>Hello 👋</Text>
+            <Text style={styles.headerName}>{profile?.name || "Teacher"}</Text>
+          </View>
         </View>
+        <TouchableOpacity onPress={() => router.replace("/(drawer)/login")} style={styles.logoutBtn}>
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
       </View>
 
       {/* dashboard or lists */}
@@ -968,6 +1024,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  profilePhoto: { width: 44, height: 44, borderRadius: 22 },
+  headerHi: { color: "#4c1d95", fontWeight: "600" },
+  headerName: { fontSize: 16, fontWeight: "900", color: "#111" },
   headerText: { fontSize: 22, fontWeight: "900", color: "#111" },
   profileBtn: {
     padding: 6,
@@ -1073,10 +1132,7 @@ const styles = StyleSheet.create({
   statRow: {
     flexDirection: "row",
     justifyContent: "space-around",
-    marginTop: 12,
-  },
-  statBox: {
-    alignItems: "center",
+    marginTop: 12, 
   },
   statNumber: {
     fontSize: 24,

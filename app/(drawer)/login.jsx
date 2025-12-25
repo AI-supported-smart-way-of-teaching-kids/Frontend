@@ -505,7 +505,7 @@ export default function LoginPage() {
               }}
             >
               <Image
-                source={require("../../assets/images/kidsicon.jpg")}
+                source={require("../../assets/images/logo.png")}
                 style={{
                   width: "100%",
                   height: "100%",

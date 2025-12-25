@@ -4,7 +4,7 @@
     "slug": "Smart-App",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/kidsicon.jpg",
+    "icon": "./assets/images/logo.png",
     "scheme": "smartapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -23,14 +23,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/kidsicon.jpg"
+      "favicon": "./assets/images/logo.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/kidsicon.jpg",
+          "image": "./assets/images/logo.png",
           "imageWidth": 200,
           "resizeMode": "cover",
           "backgroundColor": "#ffffff",

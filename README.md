@@ -1,55 +1,87 @@
+# Smart Kids Learning
 
-# Welcome to your Expo app 👋
+An AI-supported smart way of teaching, designed for kids, parents, and teachers. This mobile app facilitates interactive learning experiences with personalized dashboards for different user roles.
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## Features
 
-## Get started
+- **Multi-Role Support**: Separate dashboards for Kids, Parents, and Teachers
+- **Multilingual**: Supports English, Amharic, and Tigrigna languages
+- **Interactive Learning**: AI-enhanced educational content
+- **PDF Viewing**: Integrated PDF viewer for documents and lessons
+- **Image Handling**: Image picker for uploads and interactions
+- **Cross-Platform**: Runs on Android, iOS, and Web
 
-1. Install dependencies
+## Tech Stack
 
+- **Framework**: [Expo](https://expo.dev) with React Native
+- **Language**: TypeScript and JavaScript
+- **Navigation**: Expo Router with React Navigation
+- **Internationalization**: i18next
+- **UI Components**: Custom components with Expo Vector Icons
+- **State Management**: React Context for themes, languages, and user data
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (version 18 or later)
+- npm or yarn
+- Expo CLI
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd Smart-App
+   ```
+
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-2. Start the app
-
+3. Start the development server:
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+4. Run on your preferred platform:
+   - **Android**: `npm run android` or press `a` in the Expo CLI
+   - **iOS**: `npm run ios` or press `i` in the Expo CLI (macOS only)
+   - **Web**: `npm run web` or press `w` in the Expo CLI
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Project Structure
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- `app/`: Main application screens and layouts
+- `components/`: Reusable UI components
+- `contexts/`: React contexts for state management
+- `locales/`: Translation files for internationalization
+- `assets/`: Images, fonts, and other static assets
+- `src/`: API utilities
 
-## Get a fresh project
+## Usage
 
-When you're ready, run:
+1. Launch the app and select your role (Kid, Parent, or Teacher)
+2. Sign in or create an account
+3. Access your personalized dashboard
+4. Explore learning materials, manage lessons, or monitor progress
 
-```bash
-npm run reset-project
-```
+## Development
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+- Use `npm run lint` to run ESLint
+- Reset the project with `npm run reset-project` (moves starter code to app-example)
 
-## Learn more
+## Contributing
 
-To learn more about developing your project with Expo, look at the following resources:
+This project is developed by Mekelle University Software Engineering students (October 2024).
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## License
 
-## Join the community
+See [LICENSE](LICENSE) file for details.
 
-Join our community of developers creating universal apps.
+## Learn More
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-=======
-# Frontend
-this repo is dedicated for frontend controling
-this repo is owned by tewe ...
+- [Expo Documentation](https://docs.expo.dev/)
+- [React Native Documentation](https://reactnative.dev/docs/getting-started)
+- [Expo Router](https://docs.expo.dev/router/introduction/)

@@ -27,7 +27,7 @@ const STORAGE = {
   LESSONS: "@app_lessons_v1",
   VIDEOS: "@app_videos_v1",
   QUIZZES: "@app_quizzes_v1",
-  PHOTO: "@profile_photo",
+  PROFILE: "@app_profile_v1",
   STUDENT_PROGRESS: "@app_student_progress_v1",
 };
 // Pressable with subtle scale animation
@@ -76,7 +76,7 @@ export default function Kids() {
   const [quizzes, setQuizzes] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [photo, setPhoto] = useState(null);
+  const [profile, setProfile] = useState(null);
   // Which top section is active on the page
   const [selectedSection, setSelectedSection] = useState("dashboard");
   // "dashboard" | "lessons" | "videos" | "quizzes" | "progress"
@@ -124,17 +124,17 @@ export default function Kids() {
   }, [progress.lessonsCompleted.length, progress.videosCompleted.length]);
   // Quiz-taking state when viewing a quiz detail
   const [quizState, setQuizState] = useState(null);
-  // Load profile photo
+  // Load profile
   useEffect(() => {
-    const loadPhoto = async () => {
+    const loadProfile = async () => {
       try {
-        const savedPhoto = await AsyncStorage.getItem(STORAGE.PHOTO);
-        if (savedPhoto) setPhoto(savedPhoto);
+        const stored = await AsyncStorage.getItem(STORAGE.PROFILE);
+        if (stored) setProfile(JSON.parse(stored));
       } catch (e) {
-        console.warn("Error loading photo:", e);
+        console.warn("Error loading profile:", e);
       }
     };
-    loadPhoto();
+    loadProfile();
   }, []);
   // Load content
   useEffect(() => {
@@ -166,7 +166,7 @@ export default function Kids() {
       router.replace("/login");
     }
   };
-  // Pick profile photo
+  // Pick profile photo directly from dashboard
   const pickProfilePhoto = async () => {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -408,20 +408,24 @@ export default function Kids() {
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
           <Image 
-            source={require("../../assets/images/kidsicon.jpg")} 
+            source={require("../../assets/images/logo.png")} 
             style={{ width: 40, height: 40, borderRadius: 20, marginRight: 12 }}
             resizeMode="cover"
           />
-          <TouchableOpacity onPress={pickProfilePhoto} accessibilityLabel="Profile photo" style={{ marginRight: 10 }}>
-            {photo ? (
-              <Image source={{ uri: photo }} style={styles.profilePhoto} />
+          <TouchableOpacity
+            onPress={() => router.push("/profile")}
+            accessibilityLabel="Go to profile"
+            style={{ marginRight: 10 }}
+          >
+            {profile?.photo ? (
+              <Image source={{ uri: profile.photo }} style={styles.profilePhoto} />
             ) : (
-              <Ionicons name="person-circle-outline" size={44} color="#4c1d95" />
+              <Ionicons name="person-circle-outline" size={44} color="#1d9567ff" />
             )}
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerHi}>Hello 👋</Text>
-            <Text style={styles.headerName}>{contextUser?.name || "Kid"}</Text>
+            <Text style={styles.headerName}>{profile?.name || contextUser?.name || "Kid"}</Text>
           </View>
         </View>
         <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn} accessibilityLabel="Logout">
