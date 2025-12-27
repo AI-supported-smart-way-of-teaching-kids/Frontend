@@ -22,6 +22,8 @@ import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
+import i18n from "../../i18n";
+
 
 const STORAGE = {
   LESSONS: "@app_lessons_v1",
@@ -93,7 +95,7 @@ export default function TeacherDashboard() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert("Permission required", "Please allow gallery access.");
+        Alert.alert(i18n.t('permissionRequired'), i18n.t('allowGalleryAccess'));
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -178,7 +180,7 @@ useFocusEffect(
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
         setLessonPdfUri(file.uri);
-        Alert.alert("Success", `PDF "${file.name || 'file'}" selected successfully!`);
+        Alert.alert(i18n.t('success'), `${i18n.t('pdf')} "${file.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
       } else if (result.type === "success") {
         // Fallback for older API format
         setLessonPdfUri(result.uri);
@@ -186,17 +188,17 @@ useFocusEffect(
       }
     } catch (e) {
       console.warn("pickLessonPdf error", e);
-      Alert.alert("Error", "Failed to pick PDF file. Please try again.");
+      Alert.alert(i18n.t('error'), i18n.t('failedToPickPdf'));
     }
   };
 
   const addLesson = async () => {
     if (!lessonTitle.trim()) {
-      Alert.alert("Please enter a lesson title.");
+      Alert.alert(i18n.t('enterLessonTitle'));
       return;
     }
     if (!lessonPdfUri) {
-      Alert.alert("Please upload a PDF file for the lesson.");
+      Alert.alert(i18n.t('uploadPdfForLesson'));
       return;
     }
     const item = {
@@ -210,7 +212,7 @@ useFocusEffect(
     const updated = [item, ...lessons];
     setLessons(updated);
     await persist(STORAGE.LESSONS, updated);
-    Alert.alert("Success", "Lesson uploaded successfully!");
+    Alert.alert(i18n.t('success'), i18n.t('lessonUploadedSuccessfully'));
     setLessonTitle("");
     setLessonDescription("");
     setLessonCategory("");
@@ -283,7 +285,7 @@ useFocusEffect(
 
   const addVideo = async () => {
     if (!videoTitle.trim() || !videoUri) {
-      Alert.alert("Please enter title and pick a video file.");
+      Alert.alert(i18n.t('enterTitlePickVideo'));
       return;
     }
     const item = {
@@ -296,7 +298,7 @@ useFocusEffect(
     const updated = [item, ...videos];
     setVideos(updated);
     await persist(STORAGE.VIDEOS, updated);
-    Alert.alert("Success", "Video uploaded successfully!");
+    Alert.alert(i18n.t('success'), i18n.t('videoUploadedSuccessfully'));
     setVideoTitle("");
     setVideoDescription("");
     setVideoUri(null);
@@ -323,10 +325,10 @@ useFocusEffect(
   };
 
   const deleteVideo = (id) => {
-    Alert.alert("Delete video", "Are you sure?", [
-      { text: "Cancel" },
+    Alert.alert(i18n.t('deleteVideoConfirm'), i18n.t('areYouSure'), [
+      { text: i18n.t('cancel') },
       {
-        text: "Delete",
+        text: i18n.t('delete'),
         style: "destructive",
         onPress: async () => {
           const updated = videos.filter((v) => v.id !== id);
@@ -341,15 +343,15 @@ useFocusEffect(
   // add a question to the current quiz being built
   const addQuestionToBuilder = () => {
     if (!qText.trim()) {
-      Alert.alert("Enter question text");
+      Alert.alert(i18n.t('enterQuestionText'));
       return;
     }
     if (qOptions.some((o) => !o.trim())) {
-      Alert.alert("Fill all options");
+      Alert.alert(i18n.t('fillAllOptions'));
       return;
     }
     if (qAnswerIndex === null || isNaN(qAnswerIndex) || qAnswerIndex < 0 || qAnswerIndex >= qOptions.length) {
-      Alert.alert("Select valid correct option index");
+      Alert.alert(i18n.t('selectValidCorrectOption'));
       return;
     }
     const questionObj = {
@@ -366,11 +368,11 @@ useFocusEffect(
 
   const saveQuiz = async () => {
     if (!quizTitle.trim()) {
-      Alert.alert("Enter quiz title");
+      Alert.alert(i18n.t('enterQuizTitle'));
       return;
     }
     if (quizQuestions.length === 0) {
-      Alert.alert("Add at least one question");
+      Alert.alert(i18n.t('addAtLeastOneQuestion'));
       return;
     }
 
@@ -402,11 +404,11 @@ useFocusEffect(
   const saveEditQuiz = async () => {
     if (!editingQuizId) return;
     if (!editingQuizTitle.trim()) {
-      Alert.alert("Quiz title required");
+      Alert.alert(i18n.t('quizTitleRequired'));
       return;
     }
     if (!editingQuizQuestions || editingQuizQuestions.length === 0) {
-      Alert.alert("Quiz must have at least one question");
+      Alert.alert(i18n.t('quizMustHaveAtLeastOneQuestion'));
       return;
     }
     const updated = { ...quizzes, [editingQuizId]: { ...(quizzes[editingQuizId] || {}), title: editingQuizTitle.trim(), questions: editingQuizQuestions } };
@@ -418,10 +420,10 @@ useFocusEffect(
   };
 
   const deleteQuiz = (id) => {
-    Alert.alert("Delete quiz", "Are you sure?", [
-      { text: "Cancel" },
+    Alert.alert(i18n.t('deleteQuizConfirm'), i18n.t('areYouSure'), [
+      { text: i18n.t('cancel') },
       {
-        text: "Delete",
+        text: i18n.t('delete'),
         style: "destructive",
         onPress: async () => {
           const updated = { ...quizzes };
@@ -483,7 +485,7 @@ useFocusEffect(
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color="#4c1d95" />
-        <Text style={{ marginTop: 10, color: "#444" }}>Loading...</Text>
+        <Text style={{ marginTop: 10, color: "#444" }}>{i18n.t('loading')}</Text>
       </SafeAreaView>
     );
   }
@@ -511,12 +513,12 @@ useFocusEffect(
             )}
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerHi}>Hello 👋</Text>
-            <Text style={styles.headerName}>{profile?.name || "Teacher"}</Text>
+            <Text style={styles.headerHi}>{i18n.t('hello')}</Text>
+            <Text style={styles.headerName}>{profile?.name || i18n.t('teacher')}</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => router.replace("/(drawer)/login")} style={styles.logoutBtn}>
-          <Text style={styles.logoutText}>Logout</Text>
+          <Text style={styles.logoutText}>{i18n.t('logout')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -527,22 +529,22 @@ useFocusEffect(
           <View style={{ padding: 12, borderBottomWidth: 1, borderColor: "#eee" }}>
             <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }} onPress={() => setDetail(null)}>
               <Ionicons name="arrow-back" size={22} color="#333" />
-              <Text style={{ marginLeft: 8, fontWeight: "800" }}>Back</Text>
+              <Text style={{ marginLeft: 8, fontWeight: "800" }}>{i18n.t('back')}</Text>
             </TouchableOpacity>
           </View>
 
           {detail.type === "lessons" && (
             <ScrollView contentContainerStyle={{ padding: 18 }}>
               <Text style={styles.lessonTitle}>{detail.item.title}</Text>
-              <Text style={styles.lessonDesc}>{detail.item.description || "No description"}</Text>
+              <Text style={styles.lessonDesc}>{detail.item.description || i18n.t('noDescription')}</Text>
               <Text style={{ marginTop: 12, color: "#666" }}>Category: {detail.item.category || "—"}</Text>
               {detail.item.pdfUri ? (
                 <View style={{ marginTop: 12, padding: 12, backgroundColor: "#f0f0f0", borderRadius: 8 }}>
                   <Ionicons name="document-text" size={24} color="#4c1d95" />
-                  <Text style={{ marginTop: 4, color: "#666" }}>PDF uploaded</Text>
+                  <Text style={{ marginTop: 4, color: "#666" }}>{i18n.t('pdfUploaded')}</Text>
                 </View>
               ) : (
-                <Text style={{ marginTop: 12, color: "#999", fontStyle: "italic" }}>No PDF uploaded</Text>
+                <Text style={{ marginTop: 12, color: "#999", fontStyle: "italic" }}>{i18n.t('noPdfUploaded')}</Text>
               )}
 
               <View style={{ flexDirection: "row", marginTop: 18 }}>
@@ -635,7 +637,7 @@ useFocusEffect(
                   <Ionicons name="people" size={32} color="#4c1d95" />
                   <View style={{ marginLeft: 12 }}>
                     <Text style={styles.statValue}>{Object.keys(studentProgress).length}</Text>
-                    <Text style={styles.statLabel}>Active Students</Text>
+                    <Text style={styles.statLabel}>{i18n.t('activeStudents')}</Text>
                   </View>
                 </View>
               </View>
@@ -877,7 +879,7 @@ useFocusEffect(
               
               {/* Overall Statistics */}
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Overall Statistics</Text>
+                <Text style={styles.cardTitle}>{i18n.t('overallStatistics')}</Text>
                 <View style={styles.statRow}>
                   <View style={styles.statBox}>
                     <Text style={styles.statNumber}>{lessons.length}</Text>
@@ -885,7 +887,7 @@ useFocusEffect(
                   </View>
                   <View style={styles.statBox}>
                     <Text style={styles.statNumber}>{videos.length}</Text>
-                    <Text style={styles.statLabel}>Videos</Text>
+                    <Text style={styles.statLabel}>{i18n.t('videos')}</Text>
                   </View>
                   <View style={styles.statBox}>
                     <Text style={styles.statNumber}>{Object.keys(quizzes).length}</Text>
@@ -901,7 +903,7 @@ useFocusEffect(
               {/* Progress Graph */}
               {Object.keys(studentProgress).length > 0 && (
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>📈 Overall Completion Rate</Text>
+                  <Text style={styles.cardTitle}>📈 {i18n.t('overallCompletionRate')}</Text>
                   {Object.entries(studentProgress).map(([studentId, data]) => {
                     const lessonsProgress = lessons.length > 0 ? (data.lessonsCompleted?.length || 0) / lessons.length * 100 : 0;
                     const videosProgress = videos.length > 0 ? (data.videosCompleted?.length || 0) / videos.length * 100 : 0;
@@ -964,7 +966,7 @@ useFocusEffect(
                         ))}
                       </View>
                     ) : (
-                      <Text style={{ marginTop: 6, fontStyle: "italic", color: "#999" }}>Not attempted yet</Text>
+                      <Text style={{ marginTop: 6, fontStyle: "italic", color: "#999" }}>{i18n.t('notAttemptedYet')}</Text>
                     )}
                   </View>
                 ))

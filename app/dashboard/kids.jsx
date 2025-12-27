@@ -23,6 +23,7 @@ import { useUser } from "../../contexts/UserContext";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import PdfViewer from "../../components/PdfViewer";
+import i18n from "../../i18n";
 const STORAGE = {
   LESSONS: "@app_lessons_v1",
   VIDEOS: "@app_videos_v1",
@@ -392,7 +393,7 @@ export default function Kids() {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color="#4c1d95" />
-        <Text style={{ marginTop: 10, color: "#444" }}>Loading...</Text>
+        <Text style={{ marginTop: 10, color: "#444" }}>{i18n.t('loading')}</Text>
       </SafeAreaView>
     );
   }
@@ -424,7 +425,7 @@ export default function Kids() {
             )}
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerHi}>Hello 👋</Text>
+            <Text style={styles.headerHi}>{i18n.t('hello')}</Text>
             <Text style={styles.headerName}>{profile?.name || contextUser?.name || "Kid"}</Text>
           </View>
         </View>
@@ -434,8 +435,8 @@ export default function Kids() {
       </View>
       {/* Welcome */}
       <View style={styles.welcomeBox}>
-        <Text style={styles.welcomeTitle}>Ready to explore today?</Text>
-        <Text style={styles.welcomeSubtitle}>Tap a card to open the section.</Text>
+        <Text style={styles.welcomeTitle}>{i18n.t('readyToExplore')}</Text>
+        <Text style={styles.welcomeSubtitle}>{i18n.t('tapCardToOpen')}</Text>
       </View>
       {/* Search Row (visible in dashboard/lessons/videos/quizzes) */}
       {showSearch && (
@@ -443,7 +444,7 @@ export default function Kids() {
           <View style={styles.searchBox}>
             <Ionicons name="search" size={18} color="#666" />
             <TextInput
-              placeholder="Search lessons, videos or quizzes"
+            placeholder={i18n.t('searchLessonsVideosQuizzes')}
               style={styles.searchInput}
               value={search}
               onChangeText={setSearch}
@@ -582,14 +583,14 @@ export default function Kids() {
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
               <View style={styles.gridRow}>
                 <DashboardCard
-                  title="Lessons"
-                  subtitle={`${lessons.length} available`}
+                  title={i18n.t('lessons')}
+                  subtitle={`${lessons.length} ${i18n.t('available')}`}
                   emoji="📘"
                   onPress={() => setSelectedSection("lessons")}
                 />
                 <DashboardCard
-                  title="Videos"
-                  subtitle={`${videos.length} available`}
+                  title={i18n.t('videos')}
+                  subtitle={`${videos.length} ${i18n.t('available')}`}
                   emoji="🎬"
                   onPress={() => setSelectedSection("videos")}
                 />
@@ -602,8 +603,8 @@ export default function Kids() {
                   onPress={() => setSelectedSection("quizzes")}
                 />
                 <DashboardCard
-                  title="Progress"
-                  subtitle={`Lessons ${progress.lessonsCompleted.length}/${lessons.length}`}
+                  title={i18n.t('progress')}
+                  subtitle={`${i18n.t('lessons')} ${progress.lessonsCompleted.length}/${lessons.length}`}
                   emoji="🎯"
                   onPress={() => setSelectedSection("progress")}
                 />
