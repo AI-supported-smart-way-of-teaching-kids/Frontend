@@ -25,7 +25,6 @@ import * as ImagePicker from "expo-image-picker";
 import PdfViewer from "../../components/PdfViewer";
 import i18n from "../../i18n";
 const STORAGE = {
-  LESSONS: "@app_lessons_v1",
   VIDEOS: "@app_videos_v1",
   QUIZZES: "@app_quizzes_v1",
   PROFILE: "@app_profile_v1",
@@ -72,7 +71,6 @@ const ProgressBar = ({ progress }) => {
 export default function Kids() {
   const { user: contextUser, logout } = useUser();
   const router = useRouter();
-  const [lessons, setLessons] = useState([]);
   const [videos, setVideos] = useState([]);
   const [quizzes, setQuizzes] = useState({});
   const [loading, setLoading] = useState(true);
@@ -80,16 +78,60 @@ export default function Kids() {
   const [profile, setProfile] = useState(null);
   // Which top section is active on the page
   const [selectedSection, setSelectedSection] = useState("dashboard");
-  // "dashboard" | "lessons" | "videos" | "quizzes" | "progress"
+  // "dashboard" | "videos" | "quizzes" | "progress"
   // Inline detail view state (replaces modals)
-  // { type: 'video'|'lesson'|'quiz', item: object | id } or null
+  // { type: 'video'|'quiz', item: object | id } or null
   const [detail, setDetail] = useState(null);
   const videoRef = useRef(null);
   // Track completed items for progress
   const [progress, setProgress] = useState({
-    lessonsCompleted: [],
     videosCompleted: [],
   });
+
+  // Badge system state
+  const [recentBadge, setRecentBadge] = useState(null);
+  const badgeAnim = useRef(new Animated.Value(0)).current;
+
+  // Show badge with animation
+  const showBadge = (badge) => {
+    setRecentBadge(badge);
+    Animated.timing(badgeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(badgeAnim, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }).start(() => setRecentBadge(null));
+      }, 3000);
+    });
+  };
+
+  // Check for new badge (dynamic emoji/label)
+  const checkForNewBadge = (type) => {
+    let badge = null;
+    const videoCount = progress.videosCompleted.length;
+
+    if (type === "video") {
+      if (videoCount === 1) badge = "🎬 First Video";
+      else if (videoCount === 3) badge = "🎬 Video Explorer";
+      else if (videoCount === 5) badge = "🏆 Video Master";
+    }
+
+    if (type === "quiz") {
+      Object.values(quizzes).forEach(q => {
+        if (q.results?.length > 0) {
+          const score = q.results[0].score;
+          if (score >= 80) badge = "🧠 Quiz Star";
+        }
+      });
+    }
+
+    if (badge) showBadge(badge);
+  };
 
   // Save progress to student progress storage
   const saveStudentProgress = async () => {
@@ -103,13 +145,11 @@ export default function Kids() {
       if (!studentProgress[studentId]) {
         studentProgress[studentId] = {
           name: studentName,
-          lessonsCompleted: [],
           videosCompleted: [],
           quizResults: [],
         };
       }
-      
-      studentProgress[studentId].lessonsCompleted = progress.lessonsCompleted;
+
       studentProgress[studentId].videosCompleted = progress.videosCompleted;
       studentProgress[studentId].name = studentName; // Update name in case it changed
       
@@ -122,7 +162,7 @@ export default function Kids() {
   // Save progress whenever it changes
   useEffect(() => {
     saveStudentProgress();
-  }, [progress.lessonsCompleted.length, progress.videosCompleted.length]);
+  }, [progress.videosCompleted.length]);
   // Quiz-taking state when viewing a quiz detail
   const [quizState, setQuizState] = useState(null);
   // Load profile
@@ -141,12 +181,10 @@ export default function Kids() {
   useEffect(() => {
     (async () => {
       try {
-        const [rawLessons, rawVideos, rawQuizzes] = await Promise.all([
-          AsyncStorage.getItem(STORAGE.LESSONS),
+        const [rawVideos, rawQuizzes] = await Promise.all([
           AsyncStorage.getItem(STORAGE.VIDEOS),
           AsyncStorage.getItem(STORAGE.QUIZZES),
         ]);
-        setLessons(rawLessons ? JSON.parse(rawLessons) : []);
         setVideos(rawVideos ? JSON.parse(rawVideos) : []);
         setQuizzes(rawQuizzes ? JSON.parse(rawQuizzes) : {});
       } catch (e) {
@@ -192,13 +230,6 @@ export default function Kids() {
   };
   // Search helpers
   const normalize = (s = "") => s.toLowerCase().trim();
-  const filterLessons = (q) =>
-    lessons.filter(
-      (l) =>
-        normalize(l.title).includes(q) ||
-        normalize(l.description).includes(q) ||
-        normalize(l.category).includes(q)
-    );
   const filterVideos = (q) =>
     videos.filter(
       (v) =>
@@ -213,7 +244,6 @@ export default function Kids() {
       .map(([id, quiz]) => ({ id, ...quiz }));
   const q = normalize(search);
   const results = {
-    lessons: q ? filterLessons(q) : lessons,
     videos: q ? filterVideos(q) : videos,
     quizzes: q
       ? filterQuizzes(q)
@@ -223,22 +253,16 @@ export default function Kids() {
   const openVideoInline = (video) => {
     setDetail({ type: "video", item: video });
     // Mark watched
-    setProgress((prev) => ({
-      ...prev,
-      videosCompleted: prev.videosCompleted.includes(video.id)
-        ? prev.videosCompleted
-        : [...prev.videosCompleted, video.id],
-    }));
-  };
-  const openLessonInline = (lesson) => {
-    setDetail({ type: "lesson", item: lesson });
-    // Mark completed
-    setProgress((prev) => ({
-      ...prev,
-      lessonsCompleted: prev.lessonsCompleted.includes(lesson.id)
-        ? prev.lessonsCompleted
-        : [...prev.lessonsCompleted, lesson.id],
-    }));
+    setProgress((prev) => {
+      const updated = {
+        ...prev,
+        videosCompleted: prev.videosCompleted.includes(video.id)
+          ? prev.videosCompleted
+          : [...prev.videosCompleted, video.id],
+      };
+      checkForNewBadge("video");
+      return updated;
+    });
   };
   const openQuizInline = (quizId) => {
     const quiz = quizzes[quizId];
@@ -298,7 +322,6 @@ export default function Kids() {
       if (!studentProgress[studentId]) {
         studentProgress[studentId] = {
           name: studentName,
-          lessonsCompleted: [],
           videosCompleted: [],
           quizResults: [],
         };
@@ -319,14 +342,14 @@ export default function Kids() {
         existingResult.date = new Date().toISOString();
       }
       
-      // Update lessons and videos completed
-      studentProgress[studentId].lessonsCompleted = progress.lessonsCompleted;
+      // Update videos completed
       studentProgress[studentId].videosCompleted = progress.videosCompleted;
       
       await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
       await AsyncStorage.setItem(STORAGE.QUIZZES, JSON.stringify(updated));
       setQuizzes(updated);
       setQuizState((prev) => (prev ? { ...prev, finished: true, score } : prev));
+      checkForNewBadge("quiz");
       Alert.alert("Quiz completed", `Your score: ${score}%`);
     } catch (e) {
       console.warn("Failed to save quiz result:", e);
@@ -339,7 +362,6 @@ export default function Kids() {
       key={item.id}
       style={{ marginTop: 12 }}
       onPress={() => {
-        if (type === "lessons") openLessonInline(item);
         if (type === "videos") openVideoInline(item);
         if (type === "quizzes") openQuizInline(item.id);
       }}
@@ -347,12 +369,12 @@ export default function Kids() {
       <View style={styles.itemCard}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>
-            {type === "lessons" ? "📘 " : type === "videos" ? "🎬 " : "❓ "}
+            {type === "videos" ? "🎬 " : "❓ "}
             {item.title}
           </Text>
           <View style={styles.cardBadge}>
             <Text style={styles.cardBadgeText}>
-              {type === "lessons" ? item.category || "Lesson" : type}
+              {type}
             </Text>
           </View>
         </View>
@@ -397,14 +419,34 @@ export default function Kids() {
       </SafeAreaView>
     );
   }
-  // Search visibility: show for dashboard, lessons, videos, quizzes.
+  // Search visibility: show for dashboard, videos, quizzes.
   const showSearch =
     selectedSection === "dashboard" ||
-    selectedSection === "lessons" ||
     selectedSection === "videos" ||
     selectedSection === "quizzes";
   return (
     <SafeAreaView style={styles.container}>
+      {/* Badge Popup */}
+      {recentBadge && (
+        <Animated.View
+          style={[
+            styles.badgePopup,
+            {
+              opacity: badgeAnim,
+              transform: [
+                {
+                  translateY: badgeAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-50, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Text style={styles.badgePopupText}>{recentBadge}</Text>
+        </Animated.View>
+      )}
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
@@ -438,13 +480,13 @@ export default function Kids() {
         <Text style={styles.welcomeTitle}>{i18n.t('readyToExplore')}</Text>
         <Text style={styles.welcomeSubtitle}>{i18n.t('tapCardToOpen')}</Text>
       </View>
-      {/* Search Row (visible in dashboard/lessons/videos/quizzes) */}
+      {/* Search Row (visible in dashboard/videos/quizzes) */}
       {showSearch && (
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
             <Ionicons name="search" size={18} color="#666" />
             <TextInput
-            placeholder={i18n.t('searchLessonsVideosQuizzes')}
+            placeholder={i18n.t('searchVideosQuizzes')}
               style={styles.searchInput}
               value={search}
               onChangeText={setSearch}
@@ -494,42 +536,7 @@ export default function Kids() {
             </View>
           )}
 
-          {detail.type === "lesson" && (
-            <View style={{ flex: 1 }}>
-              <View style={{ padding: 12, backgroundColor: "#fff", borderBottomWidth: 1, borderColor: "#eee" }}>
-                <Text style={styles.lessonTitle}>{detail.item.title}</Text>
-                <Text style={styles.lessonDesc}>
-                  {detail.item.description || "No description"}
-                </Text>
-                {detail.item.category && (
-                  <Text style={{ marginTop: 8, color: "#666" }}>Category: {detail.item.category}</Text>
-                )}
-              </View>
-              {detail.item.pdfUri ? (
-                <PdfViewer
-                  source={{ uri: detail.item.pdfUri, cache: true }}
-                  onError={(error) => {
-                    console.error("PDF Error:", error);
-                    Alert.alert("Error", "Failed to load PDF");
-                  }}
-                  style={{ flex: 1 }}
-                />
-              ) : (
-                <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
-                  <Ionicons name="document-text-outline" size={64} color="#ccc" />
-                  <Text style={{ marginTop: 12, color: "#999" }}>No PDF available for this lesson</Text>
-                </View>
-              )}
-              <View style={{ padding: 12, backgroundColor: "#fff" }}>
-                <TouchableOpacity
-                  onPress={() => setDetail(null)}
-                  style={styles.primaryBtn}
-                >
-                  <Text style={styles.primaryBtnText}>Close Lesson</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+
           {detail.type === "quiz" && quizState && quizState.quizId === detail.item && (
             <KeyboardAvoidingView
               behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -583,49 +590,29 @@ export default function Kids() {
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
               <View style={styles.gridRow}>
                 <DashboardCard
-                  title={i18n.t('lessons')}
-                  subtitle={`${lessons.length} ${i18n.t('available')}`}
-                  emoji="📘"
-                  onPress={() => setSelectedSection("lessons")}
-                />
-                <DashboardCard
                   title={i18n.t('videos')}
                   subtitle={`${videos.length} ${i18n.t('available')}`}
                   emoji="🎬"
                   onPress={() => setSelectedSection("videos")}
                 />
-              </View>
-              <View style={styles.gridRow}>
                 <DashboardCard
                   title="Quizzes"
                   subtitle={`${Object.keys(quizzes).length} available`}
                   emoji="❓"
                   onPress={() => setSelectedSection("quizzes")}
                 />
+              </View>
+              <View style={styles.gridRow}>
                 <DashboardCard
                   title={i18n.t('progress')}
-                  subtitle={`${i18n.t('lessons')} ${progress.lessonsCompleted.length}/${lessons.length}`}
+                  subtitle="View progress"
                   emoji="🎯"
                   onPress={() => setSelectedSection("progress")}
                 />
               </View>
             </ScrollView>
           )}
-          {/* LESSONS LIST INLINE */}
-          {selectedSection === "lessons" && (
-            <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
-              <TouchableOpacity onPress={() => setSelectedSection("dashboard")} style={{ marginBottom: 10 }}>
-                <Ionicons name="arrow-back" size={24} color="#333" />
-              </TouchableOpacity>
-              {results.lessons.length === 0 ? (
-                <View style={styles.emptyBox}>
-                  <Text style={styles.emptyText}>No lessons found</Text>
-                </View>
-              ) : (
-                results.lessons.map((l) => renderCard(l, "lessons"))
-              )}
-            </ScrollView>
-          )}
+
           {/* VIDEOS LIST INLINE */}
           {selectedSection === "videos" && (
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
@@ -662,19 +649,7 @@ export default function Kids() {
               <TouchableOpacity onPress={() => setSelectedSection("dashboard")} style={{ marginBottom: 10 }}>
                 <Ionicons name="arrow-back" size={24} color="#333" />
               </TouchableOpacity>
-              <View style={styles.card}>
-                <Text style={styles.smallTitle}>Lessons Completed</Text>
-                <Text style={{ marginTop: 6 }}>
-                  {progress.lessonsCompleted.length} / {lessons.length}
-                </Text>
-                <ProgressBar
-                  progress={
-                    lessons.length === 0
-                      ? 0
-                      : Math.round((progress.lessonsCompleted.length / lessons.length) * 100)
-                  }
-                />
-              </View>
+
               <View style={styles.card}>
                 <Text style={styles.smallTitle}>Videos Watched</Text>
                 <Text style={{ marginTop: 6 }}>
@@ -864,8 +839,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginHorizontal: 4,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "800" },
-
+  primaryBtnText: { color: "#fff", fontWeight: "800" }, 
   // Quiz
   questionText: { fontWeight: "800", fontSize: 16, marginBottom: 8 },
   optionBtn: {
@@ -890,5 +864,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.03,
     shadowRadius: 6,
     elevation: 1,
+  },
+  badgePopup: {
+    position: "absolute",
+    top: 40,
+    alignSelf: "center",
+    backgroundColor: "#4c1d95",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
+    zIndex: 99,
+  },
+  badgePopupText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
 });

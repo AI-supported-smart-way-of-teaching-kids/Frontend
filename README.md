@@ -4,7 +4,7 @@ An AI-supported smart way of teaching, designed for kids, parents, and teachers.
 
 ## Features
 
-- **Multi-Role Support**: Separate dashboards for Kids, Parents, and Teachers
+- **Multi-Role Support**: Separate dashboards for Kids and Teachers
 - **Multilingual**: Supports English, Amharic, and Tigrigna languages
 - **Interactive Learning**: AI-enhanced educational content
 - **PDF Viewing**: Integrated PDF viewer for documents and lessons

@@ -244,10 +244,10 @@ useFocusEffect(
   };
 
   const deleteLesson = (id) => {
-    Alert.alert("Delete lesson", "Are you sure?", [
-      { text: "Cancel" },
+    Alert.alert(i18n.t('deleteLessonConfirm'), i18n.t('areYouSure'), [
+      { text: i18n.t('cancel') },
       {
-        text: "Delete",
+        text: i18n.t('delete'),
         style: "destructive",
         onPress: async () => {
           const updated = lessons.filter((l) => l.id !== id);
@@ -271,15 +271,15 @@ useFocusEffect(
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
         setVideoUri(file.uri);
-        Alert.alert("Success", `Video "${file.name || 'file'}" selected successfully!`);
+        Alert.alert(i18n.t('success'), `${i18n.t('video')} "${file.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
       } else if (result.type === "success") {
         // Fallback for older API format
         setVideoUri(result.uri);
-        Alert.alert("Success", `Video "${result.name || 'file'}" selected successfully!`);
+        Alert.alert(i18n.t('success'), `${i18n.t('video')} "${result.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
       }
     } catch (e) {
       console.warn("pickVideo error", e);
-      Alert.alert("Error", "Failed to pick video file. Please try again.");
+      Alert.alert(i18n.t('error'), i18n.t('failedToPickVideo'));
     }
   };
 
@@ -572,9 +572,9 @@ useFocusEffect(
           {detail.type === "videos" && (
             <View style={{ flex: 1 }}>
               <View style={{ padding: 18 }}>
-                <Text style={styles.lessonTitle}>{detail.item.title}</Text>
-                <Text style={{ marginTop: 8 }}>{detail.item.description || "No description"}</Text>
-                <Text style={{ marginTop: 8, color: "#666" }}>URI: {detail.item.uri}</Text>
+              <Text style={styles.lessonTitle}>{detail.item.title}</Text>
+              <Text style={{ marginTop: 8 }}>{detail.item.description || i18n.t('noDescription')}</Text>
+              <Text style={{ marginTop: 8, color: "#666" }}>{i18n.t('uri')}: {detail.item.uri}</Text>
               </View>
 
               <View style={{ padding: 18 }}>
@@ -684,16 +684,16 @@ useFocusEffect(
               </TouchableOpacity>
 
               <View style={styles.card}>
-                <Text style={styles.title}>➕ Add / Edit Lesson</Text>
+                <Text style={styles.title}>{i18n.t('addEditLesson')}</Text>
 
-                <TextInput style={styles.input} placeholder="Lesson title" value={lessonTitle} onChangeText={setLessonTitle} />
-                <TextInput style={styles.input} placeholder="Description" value={lessonDescription} onChangeText={setLessonDescription} />
-                <TextInput style={styles.input} placeholder="Category" value={lessonCategory} onChangeText={setLessonCategory} />
+                <TextInput style={styles.input} placeholder={i18n.t('lessonTitle')} value={lessonTitle} onChangeText={setLessonTitle} />
+                <TextInput style={styles.input} placeholder={i18n.t('description')} value={lessonDescription} onChangeText={setLessonDescription} />
+                <TextInput style={styles.input} placeholder={i18n.t('category')} value={lessonCategory} onChangeText={setLessonCategory} />
 
                 <TouchableOpacity style={styles.fileBtn} onPress={pickLessonPdf}>
                   <Ionicons name="document-text-outline" size={20} color={lessonPdfUri ? "#4c1d95" : "#333"} />
                   <Text style={{ marginLeft: 8, color: lessonPdfUri ? "#4c1d95" : "#333", fontWeight: lessonPdfUri ? "700" : "400" }}>
-                    {lessonPdfUri ? "✓ PDF selected" : "Pick PDF file"}
+                    {lessonPdfUri ? i18n.t('pdfSelected') : i18n.t('pickPdfFile')}
                   </Text>
                 </TouchableOpacity>
 
@@ -715,9 +715,9 @@ useFocusEffect(
                 </View>
               </View>
 
-              <Text style={{ fontWeight: "900", marginTop: 8 }}>All Lessons</Text>
+              <Text style={{ fontWeight: "900", marginTop: 8 }}>{i18n.t('allLessons')}</Text>
               {lessons.length === 0 ? (
-                <View style={styles.emptyBox}><Text style={styles.emptyText}>No lessons yet.</Text></View>
+                <View style={styles.emptyBox}><Text style={styles.emptyText}>{i18n.t('noLessonsYet')}</Text></View>
               ) : (
                 lessons.map((l) => (
                   <View key={l.id} style={styles.item}>
@@ -744,35 +744,35 @@ useFocusEffect(
               </TouchableOpacity>
 
               <View style={styles.card}>
-                <Text style={styles.title}>➕ Add / Edit Video</Text>
+                <Text style={styles.title}>{i18n.t('addEditVideo')}</Text>
 
-                <TextInput style={styles.input} placeholder="Video title" value={videoTitle} onChangeText={setVideoTitle} />
-                <TextInput style={styles.input} placeholder="Description" value={videoDescription} onChangeText={setVideoDescription} />
+                <TextInput style={styles.input} placeholder={i18n.t('videoTitle')} value={videoTitle} onChangeText={setVideoTitle} />
+                <TextInput style={styles.input} placeholder={i18n.t('description')} value={videoDescription} onChangeText={setVideoDescription} />
 
                 <TouchableOpacity style={styles.fileBtn} onPress={pickVideo}>
                   <Ionicons name="videocam-outline" size={20} color={videoUri ? "#4c1d95" : "#333"} />
                   <Text style={{ marginLeft: 8, color: videoUri ? "#4c1d95" : "#333", fontWeight: videoUri ? "700" : "400" }}>
-                    {videoUri ? "✓ Video selected" : "Pick video file"}
+                    {videoUri ? i18n.t('videoSelected') : i18n.t('pickVideoFile')}
                   </Text>
                 </TouchableOpacity>
 
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   {editingVideoId ? (
                     <>
-                      <TouchableOpacity style={styles.btn} onPress={saveEditVideo}><Text style={styles.btnText}>Save</Text></TouchableOpacity>
+                      <TouchableOpacity style={styles.btn} onPress={saveEditVideo}><Text style={styles.btnText}>{i18n.t('save')}</Text></TouchableOpacity>
                       <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => { setEditingVideoId(null); setVideoTitle(""); setVideoDescription(""); setVideoUri(null); }}>
-                        <Text>Cancel</Text>
+                        <Text>{i18n.t('cancel')}</Text>
                       </TouchableOpacity>
                     </>
                   ) : (
-                    <TouchableOpacity style={styles.btn} onPress={addVideo}><Text style={styles.btnText}>Add Video</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.btn} onPress={addVideo}><Text style={styles.btnText}>{i18n.t('addVideo')}</Text></TouchableOpacity>
                   )}
                 </View>
               </View>
 
-              <Text style={{ fontWeight: "900", marginTop: 8 }}>All Videos</Text>
+              <Text style={{ fontWeight: "900", marginTop: 8 }}>{i18n.t('allVideos')}</Text>
               {videos.length === 0 ? (
-                <View style={styles.emptyBox}><Text style={styles.emptyText}>No videos yet.</Text></View>
+                <View style={styles.emptyBox}><Text style={styles.emptyText}>{i18n.t('noVideosYet')}</Text></View>
               ) : (
                 videos.map((v) => (
                   <View key={v.id} style={styles.item}>
@@ -799,31 +799,31 @@ useFocusEffect(
               </TouchableOpacity>
 
               <View style={styles.card}>
-                <Text style={styles.title}>{editingQuizId ? "✏️ Edit Quiz" : "➕ Create Quiz"}</Text>
+                <Text style={styles.title}>{editingQuizId ? i18n.t('editQuiz') : i18n.t('createQuiz')}</Text>
 
-                <TextInput style={styles.input} placeholder="Quiz title" value={editingQuizId ? editingQuizTitle : quizTitle} onChangeText={(t) => (editingQuizId ? setEditingQuizTitle(t) : setQuizTitle(t))} />
+                <TextInput style={styles.input} placeholder={i18n.t('quizTitle')} value={editingQuizId ? editingQuizTitle : quizTitle} onChangeText={(t) => (editingQuizId ? setEditingQuizTitle(t) : setQuizTitle(t))} />
 
                 {/* Builder area */}
-                <Text style={{ fontWeight: "800", marginTop: 8 }}>{editingQuizId ? "Questions (editing)" : "Add question"}</Text>
+                <Text style={{ fontWeight: "800", marginTop: 8 }}>{editingQuizId ? i18n.t('questions') + " (editing)" : i18n.t('addQuestion')}</Text>
 
-                <TextInput style={styles.input} placeholder="Question text" value={qText} onChangeText={setQText} />
+                <TextInput style={styles.input} placeholder={i18n.t('questionText')} value={qText} onChangeText={setQText} />
                 {qOptions.map((opt, idx) => (
-                  <TextInput key={idx} style={styles.input} placeholder={`Option ${idx + 1}`} value={opt} onChangeText={(t) => { const arr = [...qOptions]; arr[idx] = t; setQOptions(arr); }} />
+                  <TextInput key={idx} style={styles.input} placeholder={`${i18n.t('option')} ${idx + 1}`} value={opt} onChangeText={(t) => { const arr = [...qOptions]; arr[idx] = t; setQOptions(arr); }} />
                 ))}
 
-                <TextInput style={styles.input} placeholder="Correct option index (0-3)" keyboardType="number-pad" value={qAnswerIndex !== null ? String(qAnswerIndex) : ""} onChangeText={(t) => setQAnswerIndex(t === "" ? null : Number(t))} />
+                <TextInput style={styles.input} placeholder={i18n.t('correctOptionIndex')} keyboardType="number-pad" value={qAnswerIndex !== null ? String(qAnswerIndex) : ""} onChangeText={(t) => setQAnswerIndex(t === "" ? null : Number(t))} />
 
                 <View style={{ flexDirection: "row", gap: 8 }}>
-                  <TouchableOpacity style={styles.btn} onPress={addQuestionToBuilder}><Text style={styles.btnText}>Add Question</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.btn} onPress={addQuestionToBuilder}><Text style={styles.btnText}>{i18n.t('addQuestionBtn')}</Text></TouchableOpacity>
                   <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => { setQText(""); setQOptions(["", "", "", ""]); setQAnswerIndex(null); }}>
-                    <Text>Clear</Text>
+                    <Text>{i18n.t('clear')}</Text>
                   </TouchableOpacity>
                 </View>
 
                 {/* Preview added questions */}
                 {quizQuestions.length > 0 && (
                   <View style={{ marginTop: 12 }}>
-                    <Text style={{ fontWeight: "800" }}>Preview Questions</Text>
+                    <Text style={{ fontWeight: "800" }}>{i18n.t('previewQuestions')}</Text>
                     {quizQuestions.map((qq, i) => (
                       <View key={qq.id} style={{ marginTop: 8 }}>
                         <Text style={{ fontWeight: "700" }}>{i + 1}. {qq.question}</Text>
@@ -835,12 +835,12 @@ useFocusEffect(
 
                 <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
                   {!editingQuizId ? (
-                    <TouchableOpacity style={styles.btn} onPress={saveQuiz}><Text style={styles.btnText}>Save Quiz</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.btn} onPress={saveQuiz}><Text style={styles.btnText}>{i18n.t('saveQuiz')}</Text></TouchableOpacity>
                   ) : (
                     <>
-                      <TouchableOpacity style={styles.btn} onPress={saveEditQuiz}><Text style={styles.btnText}>Save Changes</Text></TouchableOpacity>
+                      <TouchableOpacity style={styles.btn} onPress={saveEditQuiz}><Text style={styles.btnText}>{i18n.t('saveChanges')}</Text></TouchableOpacity>
                       <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => { setEditingQuizId(null); setEditingQuizTitle(""); setEditingQuizQuestions([]); }}>
-                        <Text>Cancel</Text>
+                        <Text>{i18n.t('cancel')}</Text>
                       </TouchableOpacity>
                     </>
                   )}
