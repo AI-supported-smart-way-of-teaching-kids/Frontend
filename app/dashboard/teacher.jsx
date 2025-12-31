@@ -15,6 +15,7 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from "react-native";
+import api from "../../src/api";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
@@ -23,6 +24,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import i18n from "../../i18n";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 
 const STORAGE = {
@@ -31,7 +33,28 @@ const STORAGE = {
   QUIZZES: "@app_quizzes_v1",
   // progress for teachers - tracks per student
   PROGRESS: "@app_progress_v1",
-  STUDENT_PROGRESS: "@app_student_progress_v1", // { studentId: { lessonsCompleted: [], videosCompleted: [], quizResults: [] } }
+  STUDENT_PROGRESS: "@app_student_progress_v1", // { studentId: { lessonsCompleted: [], videosCompleted: [], videoWatchingDetails: [], quizResults: [] } }
+};
+
+// Helper function to format duration in days, hours, minutes, seconds
+const formatDuration = (milliseconds) => {
+  if (!milliseconds || milliseconds < 0) {
+    return "0 seconds";
+  }
+  
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  
+  const parts = [];
+  if (days > 0) parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+  if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds} ${seconds === 1 ? 'second' : 'seconds'}`);
+  
+  return parts.join(", ");
 };
 
 // small AnimatedPressable (copy of Kids style)
@@ -49,6 +72,7 @@ const AnimatedPressable = ({ children, onPress, style }) => {
 
 export default function TeacherDashboard() {
   const router = useRouter();
+  const { language, changeLanguage } = useLanguage();
 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
@@ -77,10 +101,16 @@ export default function TeacherDashboard() {
 
   // Quiz builder
   const [quizTitle, setQuizTitle] = useState("");
-  const [quizQuestions, setQuizQuestions] = useState([]); // array of { question, options:[], answerIndex }
+  const [quizQuestions, setQuizQuestions] = useState([]); // array of { question, options:[], answerIndex, type, imageUri?, audioUri? }
   // current question inputs
   const [qText, setQText] = useState("");
+  const [qType, setQType] = useState("text"); // "text" | "image" | "audio"
+  const [qImageUri, setQImageUri] = useState(null);
+  const [qAudioUri, setQAudioUri] = useState(null);
   const [qOptions, setQOptions] = useState(["", "", "", ""]);
+  const [qOptionTypes, setQOptionTypes] = useState(["text", "text", "text", "text"]); // track option types
+  const [qOptionImages, setQOptionImages] = useState([null, null, null, null]);
+  const [qOptionAudios, setQOptionAudios] = useState([null, null, null, null]);
   const [qAnswerIndex, setQAnswerIndex] = useState(null);
   const [editingQuizId, setEditingQuizId] = useState(null);
   const [editingQuizTitle, setEditingQuizTitle] = useState("");
@@ -107,12 +137,12 @@ export default function TeacherDashboard() {
       if (!result.canceled) {
         const uri = result.assets[0].uri;
         // Load existing profile
-        const stored = await AsyncStorage.getItem("@app_profile");
+        const stored = await AsyncStorage.getItem("@app_profile_v1");
         let data = stored ? JSON.parse(stored) : {};
         // Update only photo
         data.photo = uri;
         // Save back
-        await AsyncStorage.setItem("@app_profile", JSON.stringify(data));
+        await AsyncStorage.setItem("@app_profile_v1", JSON.stringify(data));
         // Update state
         setProfile(data);
       }
@@ -150,9 +180,22 @@ useFocusEffect(
     const loadProfile = async () => {
       try {
         const stored = await AsyncStorage.getItem("@app_profile_v1");
-        if (stored) setProfile(JSON.parse(stored));
+        if (stored) {
+          const profileData = JSON.parse(stored);
+          // Ensure photo is only set if it exists and is valid
+          if (profileData.photo && profileData.photo.trim() !== "") {
+            setProfile(profileData);
+          } else {
+            // Clear photo if it's empty or invalid
+            setProfile({ ...profileData, photo: null });
+          }
+        } else {
+          // First-time user - initialize with empty profile
+          setProfile(null);
+        }
       } catch (e) {
         console.warn("Failed to load profile", e);
+        setProfile(null);
       }
     };
     loadProfile();
@@ -184,7 +227,7 @@ useFocusEffect(
       } else if (result.type === "success") {
         // Fallback for older API format
         setLessonPdfUri(result.uri);
-        Alert.alert("Success", `PDF "${result.name || 'file'}" selected successfully!`);
+        Alert.alert(i18n.t('success'), `${i18n.t('pdf')} "${result.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
       }
     } catch (e) {
       console.warn("pickLessonPdf error", e);
@@ -340,29 +383,160 @@ useFocusEffect(
   };
 
   // ---------- QUIZZES ----------
+  // Pick image for question
+  const pickQuestionImage = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(i18n.t('permissionRequired'), i18n.t('allowGalleryAccess'));
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!result.canceled) {
+        setQImageUri(result.assets[0].uri);
+      }
+    } catch (e) {
+      console.warn("pickQuestionImage error", e);
+    }
+  };
+
+  // Pick audio for question
+  const pickQuestionAudio = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "audio/*",
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setQAudioUri(result.assets[0].uri);
+        Alert.alert(i18n.t('success'), "Audio selected successfully!");
+      }
+    } catch (e) {
+      console.warn("pickQuestionAudio error", e);
+      Alert.alert(i18n.t('error'), i18n.t('failedToPickAudioFile'));
+    }
+  };
+
+  // Pick image for option
+  const pickOptionImage = async (optionIndex) => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(i18n.t('permissionRequired'), i18n.t('allowGalleryAccess'));
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!result.canceled) {
+        const newImages = [...qOptionImages];
+        newImages[optionIndex] = result.assets[0].uri;
+        setQOptionImages(newImages);
+        const newTypes = [...qOptionTypes];
+        newTypes[optionIndex] = "image";
+        setQOptionTypes(newTypes);
+      }
+    } catch (e) {
+      console.warn("pickOptionImage error", e);
+    }
+  };
+
+  // Pick audio for option
+  const pickOptionAudio = async (optionIndex) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "audio/*",
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newAudios = [...qOptionAudios];
+        newAudios[optionIndex] = result.assets[0].uri;
+        setQOptionAudios(newAudios);
+        const newTypes = [...qOptionTypes];
+        newTypes[optionIndex] = "audio";
+        setQOptionTypes(newTypes);
+        Alert.alert(i18n.t('success'), "Audio selected successfully!");
+      }
+    } catch (e) {
+      console.warn("pickOptionAudio error", e);
+      Alert.alert(i18n.t('error'), i18n.t('failedToPickAudioFile'));
+    }
+  };
+
   // add a question to the current quiz being built
   const addQuestionToBuilder = () => {
     if (!qText.trim()) {
       Alert.alert(i18n.t('enterQuestionText'));
       return;
     }
-    if (qOptions.some((o) => !o.trim())) {
+    
+    // Validate options based on type
+    const hasValidOptions = qOptions.every((opt, idx) => {
+      if (qOptionTypes[idx] === "text") {
+        return opt.trim() !== "";
+      } else if (qOptionTypes[idx] === "image") {
+        return qOptionImages[idx] !== null;
+      } else if (qOptionTypes[idx] === "audio") {
+        return qOptionAudios[idx] !== null;
+      }
+      return false;
+    });
+    
+    if (!hasValidOptions) {
       Alert.alert(i18n.t('fillAllOptions'));
       return;
     }
+    
     if (qAnswerIndex === null || isNaN(qAnswerIndex) || qAnswerIndex < 0 || qAnswerIndex >= qOptions.length) {
       Alert.alert(i18n.t('selectValidCorrectOption'));
       return;
     }
+
+    // Validate question media
+    if (qType === "image" && !qImageUri) {
+      Alert.alert("Please select an image for the question");
+      return;
+    }
+    if (qType === "audio" && !qAudioUri) {
+      Alert.alert("Please select an audio file for the question");
+      return;
+    }
+
+    // Build options array with proper structure
+    const options = qOptions.map((opt, idx) => {
+      if (qOptionTypes[idx] === "image") {
+        return { type: "image", imageUri: qOptionImages[idx] };
+      } else if (qOptionTypes[idx] === "audio") {
+        return { type: "audio", audioUri: qOptionAudios[idx] };
+      } else {
+        return opt.trim();
+      }
+    });
+
     const questionObj = {
       id: Date.now().toString(),
       question: qText.trim(),
-      options: qOptions.map((o) => o.trim()),
+      type: qType,
+      imageUri: qImageUri,
+      audioUri: qAudioUri,
+      options: options,
       answerIndex: Number(qAnswerIndex),
     };
     setQuizQuestions([questionObj, ...quizQuestions]);
     setQText("");
+    setQType("text");
+    setQImageUri(null);
+    setQAudioUri(null);
     setQOptions(["", "", "", ""]);
+    setQOptionTypes(["text", "text", "text", "text"]);
+    setQOptionImages([null, null, null, null]);
+    setQOptionAudios([null, null, null, null]);
     setQAnswerIndex(null);
   };
 
@@ -503,13 +677,15 @@ useFocusEffect(
           />
           <TouchableOpacity
             onPress={() => router.push("/profile")}
-            accessibilityLabel="Go to profile"
+            accessibilityLabel={i18n.t('goToProfile')}
             style={{ marginRight: 10 }}
           >
-            {profile?.photo ? (
+            {profile?.photo && profile.photo.trim() !== "" ? (
               <Image source={{ uri: profile.photo }} style={styles.profilePhoto} />
             ) : (
-              <Ionicons name="person-circle-outline" size={44} color="#1d9567ff" />
+              <View style={[styles.profilePhoto, { backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" }]}>
+                <Ionicons name="person" size={24} color="#fff" />
+              </View>
             )}
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
@@ -517,9 +693,28 @@ useFocusEffect(
             <Text style={styles.headerName}>{profile?.name || i18n.t('teacher')}</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => router.replace("/(drawer)/login")} style={styles.logoutBtn}>
-          <Text style={styles.logoutText}>{i18n.t('logout')}</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {/* Language Switcher */}
+          <TouchableOpacity 
+            onPress={() => {
+              const languages = ["en", "ti", "am"];
+              const currentIndex = languages.indexOf(language);
+              const nextIndex = (currentIndex + 1) % languages.length;
+              changeLanguage(languages[nextIndex]);
+            }}
+            style={[styles.logoutBtn, { backgroundColor: "#f0f0f0", paddingVertical: 6, paddingHorizontal: 10 }]}
+            accessibilityLabel={i18n.t('selectLanguage')}
+          >
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#4c1d95" }}>
+              {language === "en" ? "🇬🇧 EN" : language === "ti" ? "🇪🇷 TI" : "🇪🇹 AM"}
+            </Text>
+          </TouchableOpacity>
+          
+          {/* Logout Button */}
+          <TouchableOpacity onPress={() => router.replace("/(drawer)/login")} style={styles.logoutBtn}>
+            <Text style={styles.logoutText}>{i18n.t('logout')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* dashboard or lists */}
@@ -537,7 +732,7 @@ useFocusEffect(
             <ScrollView contentContainerStyle={{ padding: 18 }}>
               <Text style={styles.lessonTitle}>{detail.item.title}</Text>
               <Text style={styles.lessonDesc}>{detail.item.description || i18n.t('noDescription')}</Text>
-              <Text style={{ marginTop: 12, color: "#666" }}>Category: {detail.item.category || "—"}</Text>
+              <Text style={{ marginTop: 12, color: "#666" }}>{i18n.t('category')}: {detail.item.category || i18n.t('dash')}</Text>
               {detail.item.pdfUri ? (
                 <View style={{ marginTop: 12, padding: 12, backgroundColor: "#f0f0f0", borderRadius: 8 }}>
                   <Ionicons name="document-text" size={24} color="#4c1d95" />
@@ -557,13 +752,13 @@ useFocusEffect(
                     setSelectedSection("lessons");
                   }}
                 >
-                  <Text style={styles.smallBtnText}>Edit</Text>
+                  <Text style={styles.smallBtnText}>{i18n.t('edit')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.smallBtn, { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd" }]}
                   onPress={() => deleteLesson(detail.item.id)}
                 >
-                  <Text style={[styles.smallBtnText, { color: "red" }]}>Delete</Text>
+                  <Text style={[styles.smallBtnText, { color: "red" }]}>{i18n.t('delete')}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -586,7 +781,7 @@ useFocusEffect(
                     setSelectedSection("videos");
                   }}
                 >
-                  <Text style={styles.smallBtnText}>Edit</Text>
+                  <Text style={styles.smallBtnText}>{i18n.t('edit')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -596,12 +791,41 @@ useFocusEffect(
             <ScrollView contentContainerStyle={{ padding: 18 }}>
               <Text style={[styles.lessonTitle, { marginBottom: 12 }]}>{detail.item.title}</Text>
               {(detail.item.questions || []).map((q, i) => (
-                <View key={q.id || i} style={{ marginBottom: 12 }}>
-                  <Text style={{ fontWeight: "800" }}>{i + 1}. {q.question}</Text>
+                <View key={q.id || i} style={{ marginBottom: 12, padding: 12, backgroundColor: "#f5f5f5", borderRadius: 8 }}>
+                  <Text style={{ fontWeight: "800" }}>{i + 1}. {q.question} {q.type && `[${q.type}]`}</Text>
+                  {q.type === "image" && q.imageUri && (
+                    <Image source={{ uri: q.imageUri }} style={{ width: "100%", height: 150, marginTop: 8, borderRadius: 8, resizeMode: "contain" }} />
+                  )}
+                  {q.type === "audio" && q.audioUri && (
+                    <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center" }}>
+                      <Ionicons name="musical-notes" size={20} color="#4c1d95" />
+                      <Text style={{ marginLeft: 8, color: "#666" }}>Audio question</Text>
+                    </View>
+                  )}
                   {q.options.map((o, j) => (
-                    <Text key={j} style={{ marginLeft: 12, color: q.answerIndex === j ? "green" : "#111" }}>
-                      • {o}
-                    </Text>
+                    <View key={j} style={{ marginLeft: 12, marginTop: 4 }}>
+                      {typeof o === "string" ? (
+                        <Text style={{ color: q.answerIndex === j ? "green" : "#111", fontWeight: q.answerIndex === j ? "700" : "400" }}>
+                          • {o}
+                        </Text>
+                      ) : o.type === "image" && o.imageUri ? (
+                        <View>
+                          <Text style={{ color: q.answerIndex === j ? "green" : "#111", fontWeight: q.answerIndex === j ? "700" : "400" }}>
+                            • Option {j + 1} (Image):
+                          </Text>
+                          <Image source={{ uri: o.imageUri }} style={{ width: "80%", height: 100, marginTop: 4, borderRadius: 8, resizeMode: "contain" }} />
+                        </View>
+                      ) : o.type === "audio" && o.audioUri ? (
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Text style={{ color: q.answerIndex === j ? "green" : "#111", fontWeight: q.answerIndex === j ? "700" : "400" }}>
+                            • {i18n.t('option')} {j + 1} ({i18n.t('audio')})
+                          </Text>
+                          <Ionicons name="musical-notes" size={16} color={q.answerIndex === j ? "green" : "#666"} style={{ marginLeft: 4 }} />
+                        </View>
+                      ) : (
+                        <Text style={{ color: q.answerIndex === j ? "green" : "#111" }}>• {i18n.t('option')} {j + 1}</Text>
+                      )}
+                    </View>
                   ))}
                 </View>
               ))}
@@ -615,11 +839,11 @@ useFocusEffect(
                     setSelectedSection("quizzes");
                   }}
                 >
-                  <Text style={styles.smallBtnText}>Edit</Text>
+                  <Text style={styles.smallBtnText}>{i18n.t('edit')}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[styles.smallBtn, { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd" }]} onPress={() => deleteQuiz(detail.item.id)}>
-                  <Text style={[styles.smallBtnText, { color: "red" }]}>Delete</Text>
+                  <Text style={[styles.smallBtnText, { color: "red" }]}>{i18n.t('delete')}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -634,8 +858,18 @@ useFocusEffect(
               {/* Active Students Count */}
               <View style={styles.statsCard}>
                 <View style={styles.statItem}>
-                  <Ionicons name="people" size={32} color="#4c1d95" />
-                  <View style={{ marginLeft: 12 }}>
+                  <View style={{ 
+                    width: 56, 
+                    height: 56, 
+                    borderRadius: 28, 
+                    backgroundColor: "#EFF6FF", 
+                    justifyContent: "center", 
+                    alignItems: "center",
+                    marginRight: 16,
+                  }}>
+                    <Ionicons name="people" size={28} color="#2563EB" />
+                  </View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.statValue}>{Object.keys(studentProgress).length}</Text>
                     <Text style={styles.statLabel}>{i18n.t('activeStudents')}</Text>
                   </View>
@@ -643,33 +877,65 @@ useFocusEffect(
               </View>
 
               <View style={styles.gridRow}>
-                <AnimatedPressable onPress={() => setSelectedSection("lessons")} style={{ width: "48%" }}>
+                <AnimatedPressable onPress={() => setSelectedSection("videos")} style={{ flex: 1 }}>
                   <View style={styles.dashboardCard}>
-                    <Text style={styles.dashboardCardTitle}>📘 Lessons</Text>
-                    <Text style={styles.dashboardCardSubtitle}>{lessons.length} available</Text>
-                  </View>
-                </AnimatedPressable>
-
-                <AnimatedPressable onPress={() => setSelectedSection("videos")} style={{ width: "48%" }}>
-                  <View style={styles.dashboardCard}>
-                    <Text style={styles.dashboardCardTitle}>🎬 Videos</Text>
-                    <Text style={styles.dashboardCardSubtitle}>{videos.length} available</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                      <View style={{ 
+                        width: 40, 
+                        height: 40, 
+                        borderRadius: 20, 
+                        backgroundColor: "#FEF2F2", 
+                        justifyContent: "center", 
+                        alignItems: "center",
+                        marginRight: 12,
+                      }}>
+                        <Ionicons name="videocam" size={20} color="#DC2626" />
+                      </View>
+                      <Text style={styles.dashboardCardTitle}>{i18n.t('videos')}</Text>
+                    </View>
+                    <Text style={styles.dashboardCardSubtitle}>{videos.length} {i18n.t('available')}</Text>
                   </View>
                 </AnimatedPressable>
               </View>
 
               <View style={styles.gridRow}>
-                <AnimatedPressable onPress={() => setSelectedSection("quizzes")} style={{ width: "48%" }}>
+                <AnimatedPressable onPress={() => setSelectedSection("quizzes")} style={{ flex: 1 }}>
                   <View style={styles.dashboardCard}>
-                    <Text style={styles.dashboardCardTitle}>❓ Quizzes</Text>
-                    <Text style={styles.dashboardCardSubtitle}>{Object.keys(quizzes).length} available</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                      <View style={{ 
+                        width: 40, 
+                        height: 40, 
+                        borderRadius: 20, 
+                        backgroundColor: "#F0FDF4", 
+                        justifyContent: "center", 
+                        alignItems: "center",
+                        marginRight: 12,
+                      }}>
+                        <Ionicons name="help-circle" size={20} color="#16A34A" />
+                      </View>
+                      <Text style={styles.dashboardCardTitle}>{i18n.t('quizzes')}</Text>
+                    </View>
+                    <Text style={styles.dashboardCardSubtitle}>{Object.keys(quizzes).length} {i18n.t('available')}</Text>
                   </View>
                 </AnimatedPressable>
 
-                <AnimatedPressable onPress={() => { setSelectedSection("progress"); refreshProgress(); }} style={{ width: "48%" }}>
+                <AnimatedPressable onPress={() => { setSelectedSection("progress"); refreshProgress(); }} style={{ flex: 1 }}>
                   <View style={styles.dashboardCard}>
-                    <Text style={styles.dashboardCardTitle}>📊 Progress</Text>
-                    <Text style={styles.dashboardCardSubtitle}>View Analytics</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                      <View style={{ 
+                        width: 40, 
+                        height: 40, 
+                        borderRadius: 20, 
+                        backgroundColor: "#FEF3C7", 
+                        justifyContent: "center", 
+                        alignItems: "center",
+                        marginRight: 12,
+                      }}>
+                        <Ionicons name="bar-chart" size={20} color="#D97706" />
+                      </View>
+                      <Text style={styles.dashboardCardTitle}>{i18n.t('progress')}</Text>
+                    </View>
+                    <Text style={styles.dashboardCardSubtitle}>{i18n.t('viewAnalytics')}</Text>
                   </View>
                 </AnimatedPressable>
               </View>
@@ -807,15 +1073,153 @@ useFocusEffect(
                 <Text style={{ fontWeight: "800", marginTop: 8 }}>{editingQuizId ? i18n.t('questions') + " (editing)" : i18n.t('addQuestion')}</Text>
 
                 <TextInput style={styles.input} placeholder={i18n.t('questionText')} value={qText} onChangeText={setQText} />
+                
+                {/* Question Type Selection */}
+                <Text style={{ fontWeight: "700", marginTop: 8, marginBottom: 4 }}>Question Type:</Text>
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => { setQType("text"); setQImageUri(null); setQAudioUri(null); }}
+                    style={[styles.typeBtn, qType === "text" && styles.typeBtnSelected]}
+                  >
+                    <Text style={[styles.typeBtnText, qType === "text" && styles.typeBtnTextSelected]}>Text</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => { setQType("image"); setQAudioUri(null); }}
+                    style={[styles.typeBtn, qType === "image" && styles.typeBtnSelected]}
+                  >
+                    <Text style={[styles.typeBtnText, qType === "image" && styles.typeBtnTextSelected]}>Image</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => { setQType("audio"); setQImageUri(null); }}
+                    style={[styles.typeBtn, qType === "audio" && styles.typeBtnSelected]}
+                  >
+                    <Text style={[styles.typeBtnText, qType === "audio" && styles.typeBtnTextSelected]}>Audio</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Question Media */}
+                {qType === "image" && (
+                  <TouchableOpacity style={styles.fileBtn} onPress={pickQuestionImage}>
+                    <Ionicons name="image-outline" size={20} color={qImageUri ? "#4c1d95" : "#333"} />
+                    <Text style={{ marginLeft: 8, color: qImageUri ? "#4c1d95" : "#333", fontWeight: qImageUri ? "700" : "400" }}>
+                      {qImageUri ? "Image Selected" : "Pick Question Image"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                {qType === "image" && qImageUri && (
+                  <Image source={{ uri: qImageUri }} style={{ width: "100%", height: 150, marginTop: 8, borderRadius: 8, resizeMode: "contain" }} />
+                )}
+
+                {qType === "audio" && (
+                  <TouchableOpacity style={styles.fileBtn} onPress={pickQuestionAudio}>
+                    <Ionicons name="musical-notes-outline" size={20} color={qAudioUri ? "#4c1d95" : "#333"} />
+                    <Text style={{ marginLeft: 8, color: qAudioUri ? "#4c1d95" : "#333", fontWeight: qAudioUri ? "700" : "400" }}>
+                      {qAudioUri ? "Audio Selected" : "Pick Question Audio"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Options */}
+                <Text style={{ fontWeight: "700", marginTop: 12, marginBottom: 4 }}>{i18n.t('options')}:</Text>
                 {qOptions.map((opt, idx) => (
-                  <TextInput key={idx} style={styles.input} placeholder={`${i18n.t('option')} ${idx + 1}`} value={opt} onChangeText={(t) => { const arr = [...qOptions]; arr[idx] = t; setQOptions(arr); }} />
+                  <View key={idx} style={{ marginBottom: 8 }}>
+                    <View style={{ flexDirection: "row", gap: 4, marginBottom: 4 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const newTypes = [...qOptionTypes];
+                          newTypes[idx] = "text";
+                          setQOptionTypes(newTypes);
+                          const newImages = [...qOptionImages];
+                          newImages[idx] = null;
+                          setQOptionImages(newImages);
+                          const newAudios = [...qOptionAudios];
+                          newAudios[idx] = null;
+                          setQOptionAudios(newAudios);
+                        }}
+                        style={[styles.optionTypeBtn, qOptionTypes[idx] === "text" && styles.optionTypeBtnSelected]}
+                      >
+                        <Text style={[styles.optionTypeBtnText, qOptionTypes[idx] === "text" && styles.optionTypeBtnTextSelected]}>{i18n.t('text')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const newTypes = [...qOptionTypes];
+                          newTypes[idx] = "image";
+                          setQOptionTypes(newTypes);
+                          const arr = [...qOptions];
+                          arr[idx] = "";
+                          setQOptions(arr);
+                          const newAudios = [...qOptionAudios];
+                          newAudios[idx] = null;
+                          setQOptionAudios(newAudios);
+                        }}
+                        style={[styles.optionTypeBtn, qOptionTypes[idx] === "image" && styles.optionTypeBtnSelected]}
+                      >
+                        <Text style={[styles.optionTypeBtnText, qOptionTypes[idx] === "image" && styles.optionTypeBtnTextSelected]}>{i18n.t('image')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const newTypes = [...qOptionTypes];
+                          newTypes[idx] = "audio";
+                          setQOptionTypes(newTypes);
+                          const arr = [...qOptions];
+                          arr[idx] = "";
+                          setQOptions(arr);
+                          const newImages = [...qOptionImages];
+                          newImages[idx] = null;
+                          setQOptionImages(newImages);
+                        }}
+                        style={[styles.optionTypeBtn, qOptionTypes[idx] === "audio" && styles.optionTypeBtnSelected]}
+                      >
+                        <Text style={[styles.optionTypeBtnText, qOptionTypes[idx] === "audio" && styles.optionTypeBtnTextSelected]}>Audio</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {qOptionTypes[idx] === "text" ? (
+                      <TextInput 
+                        style={styles.input} 
+                        placeholder={`${i18n.t('option')} ${idx + 1}`} 
+                        value={opt} 
+                        onChangeText={(t) => { const arr = [...qOptions]; arr[idx] = t; setQOptions(arr); }} 
+                      />
+                    ) : qOptionTypes[idx] === "image" ? (
+                      <View>
+                        <TouchableOpacity style={styles.fileBtn} onPress={() => pickOptionImage(idx)}>
+                          <Ionicons name="image-outline" size={20} color={qOptionImages[idx] ? "#4c1d95" : "#333"} />
+                          <Text style={{ marginLeft: 8, color: qOptionImages[idx] ? "#4c1d95" : "#333", fontWeight: qOptionImages[idx] ? "700" : "400" }}>
+                            {qOptionImages[idx] ? i18n.t('imageSelected') : `${i18n.t('pickImageForOption')} ${idx + 1}`}
+                          </Text>
+                        </TouchableOpacity>
+                        {qOptionImages[idx] && (
+                          <Image source={{ uri: qOptionImages[idx] }} style={{ width: "100%", height: 100, marginTop: 8, borderRadius: 8, resizeMode: "contain" }} />
+                        )}
+                      </View>
+                    ) : (
+                      <View>
+                        <TouchableOpacity style={styles.fileBtn} onPress={() => pickOptionAudio(idx)}>
+                          <Ionicons name="musical-notes-outline" size={20} color={qOptionAudios[idx] ? "#4c1d95" : "#333"} />
+                          <Text style={{ marginLeft: 8, color: qOptionAudios[idx] ? "#4c1d95" : "#333", fontWeight: qOptionAudios[idx] ? "700" : "400" }}>
+                            {qOptionAudios[idx] ? i18n.t('audioSelected') : `${i18n.t('pickAudioForOption')} ${idx + 1}`}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
                 ))}
 
                 <TextInput style={styles.input} placeholder={i18n.t('correctOptionIndex')} keyboardType="number-pad" value={qAnswerIndex !== null ? String(qAnswerIndex) : ""} onChangeText={(t) => setQAnswerIndex(t === "" ? null : Number(t))} />
 
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   <TouchableOpacity style={styles.btn} onPress={addQuestionToBuilder}><Text style={styles.btnText}>{i18n.t('addQuestionBtn')}</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => { setQText(""); setQOptions(["", "", "", ""]); setQAnswerIndex(null); }}>
+                  <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => { 
+                    setQText(""); 
+                    setQType("text");
+                    setQImageUri(null);
+                    setQAudioUri(null);
+                    setQOptions(["", "", "", ""]); 
+                    setQOptionTypes(["text", "text", "text", "text"]);
+                    setQOptionImages([null, null, null, null]);
+                    setQOptionAudios([null, null, null, null]);
+                    setQAnswerIndex(null); 
+                  }}>
                     <Text>{i18n.t('clear')}</Text>
                   </TouchableOpacity>
                 </View>
@@ -825,9 +1229,40 @@ useFocusEffect(
                   <View style={{ marginTop: 12 }}>
                     <Text style={{ fontWeight: "800" }}>{i18n.t('previewQuestions')}</Text>
                     {quizQuestions.map((qq, i) => (
-                      <View key={qq.id} style={{ marginTop: 8 }}>
-                        <Text style={{ fontWeight: "700" }}>{i + 1}. {qq.question}</Text>
-                        {qq.options.map((o, j) => <Text key={j} style={{ marginLeft: 12, color: qq.answerIndex === j ? "green" : "#111" }}>• {o}</Text>)}
+                      <View key={qq.id} style={{ marginTop: 8, padding: 12, backgroundColor: "#f5f5f5", borderRadius: 8 }}>
+                        <Text style={{ fontWeight: "700" }}>{i + 1}. {qq.question} {qq.type && `[${qq.type}]`}</Text>
+                        {qq.type === "image" && qq.imageUri && (
+                          <Image source={{ uri: qq.imageUri }} style={{ width: "100%", height: 100, marginTop: 8, borderRadius: 8, resizeMode: "contain" }} />
+                        )}
+                        {qq.type === "audio" && qq.audioUri && (
+                          <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center" }}>
+                            <Ionicons name="musical-notes" size={20} color="#4c1d95" />
+                            <Text style={{ marginLeft: 8, color: "#666" }}>Audio question</Text>
+                          </View>
+                        )}
+                        {qq.options.map((o, j) => (
+                          <View key={j} style={{ marginLeft: 12, marginTop: 4 }}>
+                            {typeof o === "string" ? (
+                              <Text style={{ color: qq.answerIndex === j ? "green" : "#111" }}>• {o}</Text>
+                            ) : o.type === "image" && o.imageUri ? (
+                              <View>
+                                <Text style={{ color: qq.answerIndex === j ? "green" : "#111", fontWeight: qq.answerIndex === j ? "700" : "400" }}>
+                                  • Option {j + 1} (Image):
+                                </Text>
+                                <Image source={{ uri: o.imageUri }} style={{ width: "80%", height: 80, marginTop: 4, borderRadius: 8, resizeMode: "contain" }} />
+                              </View>
+                            ) : o.type === "audio" && o.audioUri ? (
+                              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                <Text style={{ color: qq.answerIndex === j ? "green" : "#111", fontWeight: qq.answerIndex === j ? "700" : "400" }}>
+                                  • {i18n.t('option')} {j + 1} ({i18n.t('audio')})
+                                </Text>
+                                <Ionicons name="musical-notes" size={16} color={qq.answerIndex === j ? "green" : "#666"} style={{ marginLeft: 4 }} />
+                              </View>
+                            ) : (
+                              <Text style={{ color: qq.answerIndex === j ? "green" : "#111" }}>• Option {j + 1}</Text>
+                            )}
+                          </View>
+                        ))}
                       </View>
                     ))}
                   </View>
@@ -957,10 +1392,10 @@ useFocusEffect(
                       <View style={{ marginTop: 8 }}>
                         {quiz.results.map((r, idx) => (
                           <View key={idx} style={{ marginTop: 6, padding: 8, backgroundColor: "#f5f5f5", borderRadius: 6 }}>
-                            <Text style={{ fontWeight: "700" }}>Student: {r.studentName || "Unknown"}</Text>
-                            <Text style={{ marginTop: 4 }}>Date: {new Date(r.date).toLocaleDateString()}</Text>
+                            <Text style={{ fontWeight: "700" }}>{i18n.t('student')}: {r.studentName || i18n.t('unknown')}</Text>
+                            <Text style={{ marginTop: 4 }}>{i18n.t('date')}: {new Date(r.date).toLocaleDateString()}</Text>
                             <Text style={{ marginTop: 4, color: r.score >= 70 ? "green" : r.score >= 50 ? "orange" : "red", fontWeight: "700" }}>
-                              Score: {r.score}%
+                              {i18n.t('score')}: {r.score}%
                             </Text>
                           </View>
                         ))}
@@ -972,7 +1407,72 @@ useFocusEffect(
                 ))
               )}
 
-              {/* Student Progress Summary */}
+              {/* Active Students with Video Watching Details */}
+              <Text style={{ fontWeight: "900", marginTop: 16, marginBottom: 8 }}>{i18n.t('activeStudentsVideoWatchingDetails')}</Text>
+              {Object.keys(studentProgress).length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Text style={styles.emptyText}>No student progress data available yet.</Text>
+                </View>
+              ) : (
+                Object.entries(studentProgress).map(([studentId, data]) => {
+                  const videoWatchingDetails = data.videoWatchingDetails || [];
+                  
+                  return (
+                    <View key={studentId} style={[styles.card, { paddingVertical: 12, marginBottom: 16 }]}>
+                      <Text style={[styles.cardTitle, { fontSize: 18, marginBottom: 12 }]}>👤 {data.name || studentId}</Text>
+                      
+                      {videoWatchingDetails.length === 0 ? (
+                        <Text style={{ color: "#999", fontStyle: "italic", marginTop: 8 }}>
+                          {i18n.t('noVideosWatchedYet')}
+                        </Text>
+                      ) : (
+                        <View style={{ marginTop: 8 }}>
+                          {videoWatchingDetails.map((videoDetail, idx) => {
+                            const video = videos.find(v => v.id === videoDetail.videoId);
+                            const videoTitle = video ? video.title : `Video ID: ${videoDetail.videoId}`;
+                            const entryTime = videoDetail.entryTime 
+                              ? new Date(videoDetail.entryTime).toLocaleString() 
+                              : "Unknown";
+                            const totalDuration = formatDuration(videoDetail.totalDurationMs || 0);
+                            
+                            return (
+                              <View 
+                                key={idx} 
+                                style={{ 
+                                  marginTop: idx > 0 ? 12 : 0, 
+                                  padding: 12, 
+                                  backgroundColor: "#f8f9fa", 
+                                  borderRadius: 8,
+                                  borderLeftWidth: 3,
+                                  borderLeftColor: "#4c1d95"
+                                }}
+                              >
+                                <Text style={{ fontWeight: "700", fontSize: 15, color: "#111", marginBottom: 6 }}>
+                                  🎬 {videoTitle}
+                                </Text>
+                                <View style={{ marginTop: 4 }}>
+                                  <Text style={{ fontSize: 13, color: "#666" }}>
+                                    <Text style={{ fontWeight: "600" }}>{i18n.t('entryTime')}: </Text>
+                                    {entryTime}
+                                  </Text>
+                                </View>
+                                <View style={{ marginTop: 4 }}>
+                                  <Text style={{ fontSize: 13, color: "#666" }}>
+                                    <Text style={{ fontWeight: "600" }}>{i18n.t('totalTimeSpent')}: </Text>
+                                    {totalDuration}
+                                  </Text>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+              
+              {/* Student Progress Summary (Original) */}
               <Text style={{ fontWeight: "900", marginTop: 16, marginBottom: 8 }}>Student Progress Summary</Text>
               {Object.keys(studentProgress).length === 0 ? (
                 <View style={styles.emptyBox}>
@@ -1009,27 +1509,29 @@ useFocusEffect(
   );
 }
 
-// Styles (match Kids.jsx look & feel)
+// Professional Teacher Dashboard Styles
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f7f8fb" },
+  container: { flex: 1, backgroundColor: "#F8FAFC" }, // Professional light gray background
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   header: {
-    height: 86,
-    paddingHorizontal: 14,
-    backgroundColor: "#fff",
+    height: 90,
+    paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderBottomWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0", // Subtle border
     shadowColor: "#000",
     shadowOpacity: 0.03,
-    shadowRadius: 8,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
-  profilePhoto: { width: 44, height: 44, borderRadius: 22 },
-  headerHi: { color: "#4c1d95", fontWeight: "600" },
-  headerName: { fontSize: 16, fontWeight: "900", color: "#111" },
-  headerText: { fontSize: 22, fontWeight: "900", color: "#111" },
+  profilePhoto: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: "#E2E8F0" },
+  headerHi: { color: "#64748B", fontWeight: "400", fontSize: 12, letterSpacing: 0.4 }, // Professional gray
+  headerName: { fontSize: 18, fontWeight: "600", color: "#0F172A", letterSpacing: 0.3 }, // Professional dark
+  headerText: { fontSize: 22, fontWeight: "700", color: "#1E293B", letterSpacing: 0.3 },
   profileBtn: {
     padding: 6,
     borderRadius: 8,
@@ -1037,52 +1539,96 @@ const styles = StyleSheet.create({
   logoutBtn: {
     backgroundColor: "#EF4444",
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     borderRadius: 8,
+    shadowColor: "#EF4444",
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  logoutText: { color: "#fff", fontWeight: "700" },
-  contentScroll: { padding: 12, flexGrow: 1, paddingBottom: 36 },
-  gridRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", marginBottom: 12 },
+  logoutText: { color: "#fff", fontWeight: "600", fontSize: 13, letterSpacing: 0.2 },
+  contentScroll: { padding: 16, flexGrow: 1, paddingBottom: 36 },
+  gridRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", marginBottom: 14, gap: 12 },
   dashboardCard: {
-    backgroundColor: "#fff",
-    padding: 16,
+    backgroundColor: "#FFFFFF",
+    padding: 20,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#f0f0f0",
+    borderColor: "#E2E8F0",
     shadowColor: "#000",
     shadowOpacity: 0.03,
     shadowRadius: 8,
-    elevation: 2,
-    minHeight: 100,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+    minHeight: 110,
     justifyContent: "center",
   },
-  dashboardCardTitle: { fontSize: 16, fontWeight: "900", color: "#111" },
-  dashboardCardSubtitle: { marginTop: 6, color: "#666", fontSize: 13 },
+  dashboardCardTitle: { fontSize: 17, fontWeight: "600", color: "#0F172A", letterSpacing: 0.2 },
+  dashboardCardSubtitle: { marginTop: 8, color: "#64748B", fontSize: 13, fontWeight: "400", letterSpacing: 0.1 },
   card: {
-    backgroundColor: "#fff",
-    padding: 14,
-    marginTop: 12,
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    marginTop: 14,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#f0f0f0",
+    borderColor: "#E2E8F0",
     shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
+    shadowOpacity: 0.02,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 1 },
     elevation: 1,
   },
-  title: { fontSize: 18, fontWeight: "900", marginBottom: 8 },
-  input: { backgroundColor: "#F3F3F3", padding: 10, borderRadius: 8, marginBottom: 10 },
-  fileBtn: { backgroundColor: "#eee", padding: 10, borderRadius: 8, marginBottom: 10, alignItems: "center", flexDirection: "row", justifyContent: "center" },
-  btn: { backgroundColor: "#4c1d95", padding: 10, borderRadius: 8, marginBottom: 10, alignItems: "center" },
-  btnText: { color: "#fff", fontWeight: "800" },
+  title: { fontSize: 22, fontWeight: "600", marginBottom: 16, color: "#0F172A", letterSpacing: 0.3 },
+  input: { 
+    backgroundColor: "#FFFFFF", 
+    padding: 14, 
+    borderRadius: 10, 
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    fontSize: 15,
+    color: "#0F172A",
+    fontWeight: "400",
+  },
+  fileBtn: { 
+    backgroundColor: "#F1F5F9", 
+    padding: 12, 
+    borderRadius: 8, 
+    marginBottom: 12, 
+    alignItems: "center", 
+    flexDirection: "row", 
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  btn: { 
+    backgroundColor: "#2563EB", // Professional blue
+    padding: 16, 
+    borderRadius: 10, 
+    marginBottom: 14, 
+    alignItems: "center",
+    shadowColor: "#2563EB",
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  btnText: { color: "#fff", fontWeight: "600", fontSize: 15, letterSpacing: 0.4 },
   item: { backgroundColor: "#fff", padding: 14, borderRadius: 10, marginTop: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   itemTitle: { fontWeight: "800" },
   emptyBox: { marginTop: 18, padding: 18, alignItems: "center", justifyContent: "center" },
   emptyText: { marginTop: 8, color: "#777", fontSize: 15, fontWeight: "600" },
   lessonTitle: { fontSize: 22, fontWeight: "900" },
   lessonDesc: { marginTop: 10, fontSize: 16, lineHeight: 22, color: "#444" },
-  smallBtn: { padding: 10, backgroundColor: "#4c1d95", borderRadius: 8 },
-  smallBtnText: { color: "#fff", fontWeight: "800" },
+  smallBtn: { 
+    padding: 12, 
+    backgroundColor: "#2563EB", 
+    borderRadius: 8,
+    shadowColor: "#2563EB",
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  smallBtnText: { color: "#fff", fontWeight: "600", fontSize: 14, letterSpacing: 0.2 },
 
   // itemCard used in preview/listing
   itemCard: {
@@ -1106,15 +1652,16 @@ const styles = StyleSheet.create({
   
   // Stats card
   statsCard: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 12,
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#f0f0f0",
+    borderColor: "#E2E8F0",
     shadowColor: "#000",
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.04,
     shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
   statItem: {
@@ -1122,14 +1669,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statValue: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#4c1d95",
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#2563EB", // Professional blue
+    letterSpacing: 0.5,
   },
   statLabel: {
     fontSize: 14,
-    color: "#666",
-    marginTop: 2,
+    color: "#64748B",
+    marginTop: 4,
+    fontWeight: "500",
+    letterSpacing: 0.2,
   },
   statRow: {
     flexDirection: "row",
@@ -1168,5 +1718,48 @@ const styles = StyleSheet.create({
   miniProgressFill: {
     height: "100%",
     borderRadius: 3,
+  },
+  // Quiz builder styles
+  typeBtn: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#f0f0f0",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  typeBtnSelected: {
+    backgroundColor: "#4c1d95",
+    borderColor: "#4c1d95",
+  },
+  typeBtnText: {
+    color: "#333",
+    fontWeight: "600",
+  },
+  typeBtnTextSelected: {
+    color: "#fff",
+    fontWeight: "700",
+  },
+  optionTypeBtn: {
+    padding: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    backgroundColor: "#e0e0e0",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  optionTypeBtnSelected: {
+    backgroundColor: "#4c1d95",
+    borderColor: "#4c1d95",
+  },
+  optionTypeBtnText: {
+    color: "#666",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  optionTypeBtnTextSelected: {
+    color: "#fff",
+    fontWeight: "700",
   },
 });

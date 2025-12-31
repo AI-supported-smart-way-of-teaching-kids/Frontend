@@ -76,23 +76,24 @@ const FloatingEmoji = ({ emoji, delay = 0 }) => {
   );
 };
 
-// Enhanced Cartoon Button with animations
-function CartoonButton({ title, onPress, loading, colors, textColor = "#fff" }) {
+// Enhanced Button with role-specific styling
+function CartoonButton({ title, onPress, loading, colors, textColor = "#fff", role = "kid" }) {
   const scale = useRef(new Animated.Value(1)).current;
   const handlePressIn = () => {
     Animated.spring(scale, {
-      toValue: 0.95,
+      toValue: 0.97,
       useNativeDriver: true,
     }).start();
   };
   const handlePressOut = () => {
     Animated.spring(scale, {
       toValue: 1,
-      friction: 3,
-      tension: 40,
+      friction: role === "teacher" ? 5 : 3,
+      tension: role === "teacher" ? 50 : 40,
       useNativeDriver: true,
     }).start();
   };
+  const isTeacher = role === "teacher";
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
@@ -102,24 +103,45 @@ function CartoonButton({ title, onPress, loading, colors, textColor = "#fff" }) 
         disabled={loading}
         activeOpacity={0.9}
       >
-        <LinearGradient
-          colors={colors}
-          style={{
-            paddingVertical: height * 0.02,
-            borderRadius: 25,
-            marginTop: height * 0.015,
-            alignItems: "center",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 5,
-            elevation: 5,
-          }}
-        >
-          <Text style={{ color: textColor, fontWeight: "800", fontSize: width * 0.045 }}>
-            {loading ? `${title}...` : title}
-          </Text>
-        </LinearGradient>
+        {isTeacher ? (
+          <View
+            style={{
+              paddingVertical: height * 0.018,
+              borderRadius: 12,
+              marginTop: height * 0.015,
+              alignItems: "center",
+              backgroundColor: colors[0],
+              shadowColor: colors[0],
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.2,
+              shadowRadius: 8,
+              elevation: 4,
+            }}
+          >
+            <Text style={{ color: textColor, fontWeight: "600", fontSize: width * 0.042, letterSpacing: 0.3 }}>
+              {loading ? `${title}...` : title}
+            </Text>
+          </View>
+        ) : (
+          <LinearGradient
+            colors={colors}
+            style={{
+              paddingVertical: height * 0.02,
+              borderRadius: 25,
+              marginTop: height * 0.015,
+              alignItems: "center",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 5,
+              elevation: 5,
+            }}
+          >
+            <Text style={{ color: textColor, fontWeight: "800", fontSize: width * 0.045 }}>
+              {loading ? `${title}...` : title}
+            </Text>
+          </LinearGradient>
+        )}
       </TouchableOpacity>
     </Animated.View>
   );
@@ -176,9 +198,27 @@ export default function LoginPage() {
     }
   }, [role, logoAnim, pulseAnim]);
   const roleIcons = { kid: "happy-outline", teacher: "school" };
+  // Professional colors for teacher, playful for kids
   const roleColors = {
-    kid: ["#FFB6C1", "#FF87A0", "#FF69B4"],
-    teacher: ["#9EEAFF", "#5CD6FF", "#00BFFF"],
+    kid: ["#FF6B9D", "#FF8FB3", "#FFB6C1", "#FFE5F1"], // Bright pink gradient
+    teacher: ["#2563EB", "#3B82F6", "#60A5FA", "#EFF6FF"], // Professional blue gradient
+  };
+  // Professional grays for teacher, bright colors for kids
+  const roleTheme = {
+    kid: {
+      background: ["#FFE5F1", "#FFB6C1", "#FF87A0"],
+      text: "#1F2937",
+      inputBg: "#FFFFFF",
+      inputBorder: "#FFB6C1",
+      buttonShadow: "rgba(255, 107, 157, 0.4)",
+    },
+    teacher: {
+      background: ["#FFFFFF", "#F8FAFC", "#F1F5F9"], // Clean white to light gray - professional
+      text: "#0F172A", // Deep professional dark
+      inputBg: "#FFFFFF",
+      inputBorder: "#E2E8F0",
+      buttonShadow: "rgba(37, 99, 235, 0.15)",
+    },
   };
   const roleRouteMap = {
     kid: "/dashboard/kids",
@@ -347,6 +387,7 @@ export default function LoginPage() {
     Alert.alert("Reset Password", `Password reset link sent to ${email}!`);
   };
 
+  const theme = roleTheme[role];
   const dynamicStyles = StyleSheet.create({
     page: { flex: 1 },
     container: {
@@ -356,24 +397,25 @@ export default function LoginPage() {
     },
     logoContainer: {
       alignItems: "center",
-      marginBottom: height * 0.03,
+      marginBottom: role === "teacher" ? height * 0.05 : height * 0.03,
       position: "relative",
     },
     logo: {
-      width: width * 0.3,
-      height: width * 0.3,
-      borderRadius: (width * 0.3) / 2,
-      borderWidth: 4,
-      borderColor: "#ffffffff",
+      width: width * (role === "teacher" ? 0.22 : 0.3),
+      height: width * (role === "teacher" ? 0.22 : 0.3),
+      borderRadius: (width * (role === "teacher" ? 0.22 : 0.3)) / 2,
+      borderWidth: role === "teacher" ? 2 : 4,
+      borderColor: role === "teacher" ? "#E2E8F0" : "#FFFFFF",
     },
     logoTitle: {
-      marginTop: height * 0.015,
-      fontSize: width * 0.065,
-      fontWeight: "900",
-      color: colors.text,
-      textShadowColor: "rgba(0,0,0,0.1)",
-      textShadowOffset: { width: 0, height: 2 },
-      textShadowRadius: 4,
+      marginTop: height * 0.02,
+      fontSize: width * (role === "teacher" ? 0.052 : 0.065),
+      fontWeight: role === "teacher" ? "600" : "900",
+      color: theme.text,
+      textShadowColor: role === "teacher" ? "transparent" : "rgba(0,0,0,0.1)",
+      textShadowOffset: { width: 0, height: role === "teacher" ? 0 : 2 },
+      textShadowRadius: role === "teacher" ? 0 : 4,
+      letterSpacing: role === "teacher" ? 0.8 : 0,
     },
     roleRow: {
       flexDirection: "row",
@@ -381,72 +423,93 @@ export default function LoginPage() {
       justifyContent: "space-between",
       marginVertical: height * 0.025,
       gap: 12,
+      ...(role === "teacher" && {
+        backgroundColor: "#FFFFFF",
+        padding: 8,
+        borderRadius: 16,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
+        elevation: 2,
+      }),
     },
     roleTab: {
       flex: 1,
-      paddingVertical: height * 0.018,
-      borderRadius: 25,
-      backgroundColor: "#fff",
+      paddingVertical: height * (role === "teacher" ? 0.015 : 0.018),
+      borderRadius: role === "teacher" ? 12 : 25,
+      backgroundColor: role === "teacher" ? "transparent" : "#fff",
       alignItems: "center",
-      elevation: 3,
+      elevation: role === "teacher" ? 0 : 3,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
+      shadowOpacity: role === "teacher" ? 0 : 0.1,
       shadowRadius: 4,
+      borderWidth: role === "teacher" ? 1.5 : 0,
+      borderColor: role === "teacher" ? "#E2E8F0" : "transparent",
     },
     roleTabActive: {
-      backgroundColor: roleColors[role][0],
-      transform: [{ scale: 1.05 }],
+      backgroundColor: role === "teacher" ? roleColors[role][0] : roleColors[role][0],
+      transform: [{ scale: role === "teacher" ? 1 : 1.05 }],
+      borderColor: role === "teacher" ? roleColors[role][0] : "transparent",
     },
     roleTabText: {
       marginTop: height * 0.005,
-      color: colors.text,
-      fontWeight: "700",
-      fontSize: width * 0.038,
+      color: role === "teacher" ? "#64748B" : colors.text,
+      fontWeight: role === "teacher" ? "600" : "700",
+      fontSize: width * (role === "teacher" ? 0.035 : 0.038),
     },
     inputBox: {
       flexDirection: "row",
       alignItems: "center",
-      backgroundColor: "#fff",
-      paddingHorizontal: width * 0.045,
-      paddingVertical: height * 0.018,
-      borderRadius: 20,
-      marginBottom: height * 0.018,
-      borderWidth: 2,
-      borderColor: "#e2e8f0",
+      backgroundColor: theme.inputBg,
+      paddingHorizontal: width * (role === "teacher" ? 0.05 : 0.045),
+      paddingVertical: height * (role === "teacher" ? 0.018 : 0.018),
+      borderRadius: role === "teacher" ? 10 : 20,
+      marginBottom: height * (role === "teacher" ? 0.02 : 0.018),
+      borderWidth: role === "teacher" ? 1 : 2,
+      borderColor: role === "teacher" ? "#E2E8F0" : "#e2e8f0",
       shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-      elevation: 2,
+      shadowOffset: { width: 0, height: role === "teacher" ? 0 : 2 },
+      shadowOpacity: role === "teacher" ? 0 : 0.05,
+      shadowRadius: role === "teacher" ? 0 : 4,
+      elevation: role === "teacher" ? 0 : 2,
     },
     inputBoxFocused: {
       borderColor: roleColors[role][1],
-      borderWidth: 2,
+      borderWidth: role === "teacher" ? 2 : 2,
+      ...(role === "teacher" && {
+        shadowColor: roleColors[role][0],
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      }),
     },
     input: {
       marginLeft: 12,
       flex: 1,
-      fontSize: width * 0.042,
-      color: "#333",
+      fontSize: width * (role === "teacher" ? 0.04 : 0.042),
+      color: theme.text,
+      fontWeight: role === "teacher" ? "400" : "500",
     },
     switchText: {
       marginTop: height * 0.02,
       textAlign: "center",
-      color: "#555",
-      fontSize: width * 0.036,
+      color: role === "teacher" ? "#64748B" : "#555",
+      fontSize: width * (role === "teacher" ? 0.034 : 0.036),
       textDecorationLine: "underline",
-      fontWeight: "600",
+      fontWeight: role === "teacher" ? "500" : "600",
     },
     error: {
-      color: "#ff4d4d",
+      color: "#DC2626",
       textAlign: "center",
       marginBottom: height * 0.01,
-      fontSize: width * 0.036,
-      fontWeight: "600",
-      backgroundColor: "#ffe6e6",
-      padding: 10,
-      borderRadius: 10,
+      fontSize: width * (role === "teacher" ? 0.034 : 0.036),
+      fontWeight: role === "teacher" ? "500" : "600",
+      backgroundColor: role === "teacher" ? "#FEF2F2" : "#ffe6e6",
+      padding: role === "teacher" ? 12 : 10,
+      borderRadius: role === "teacher" ? 8 : 10,
+      borderWidth: role === "teacher" ? 1 : 0,
+      borderColor: role === "teacher" ? "#FECACA" : "transparent",
     },
     footer: {
       marginTop: height * 0.04,
@@ -463,7 +526,7 @@ export default function LoginPage() {
     },
   });
   return (
-    <LinearGradient colors={role === "kid" ? ["#FFE5F1", "#FFB6C1", "#FF87A0"] : ["#B3E5FF", "#E0F7FF", "#9EEAFF"]} style={dynamicStyles.page}>
+    <LinearGradient colors={roleTheme[role].background} style={dynamicStyles.page}>
       {/* Floating emojis for kids */}
       {role === "kid" && (
         <View style={dynamicStyles.floatingEmojis} pointerEvents="none">
@@ -514,7 +577,16 @@ export default function LoginPage() {
               />
             </View>
             <Text style={dynamicStyles.logoTitle}>{t("appTitle")}</Text>
-            {role === "kid" && <Text style={{ marginTop: 5, fontSize: width * 0.035, color: "#666" }}>🎉 {t("kidDescription")} 🎉</Text>}
+            {role === "kid" && (
+              <Text style={{ marginTop: 5, fontSize: width * 0.035, color: "#666", fontWeight: "600" }}>
+                🎉 {t("kidDescription")} 🎉
+              </Text>
+            )}
+            {role === "teacher" && (
+              <Text style={{ marginTop: 10, fontSize: width * 0.033, color: "#64748B", fontWeight: "400", letterSpacing: 0.3 }}>
+                Professional Teaching Dashboard
+              </Text>
+            )}
           </Animated.View>
           {/* Role Tabs */}
           {authMode !== "forgot" && (
@@ -578,10 +650,11 @@ export default function LoginPage() {
                 </TouchableOpacity>
                 {error ? <Text style={dynamicStyles.error}>{error}</Text> : null}
                 <CartoonButton
-                  title={`${t("signIn")} ${role === "kid" ? t("kid") : t("teacher")} ${role === "kid" ? "👶" : "👨‍🏫"}`}
+                  title={role === "teacher" ? t("signIn") : `${t("signIn")} ${t("kid")} 👶`}
                   loading={loading}
                   colors={roleColors[role]}
                   onPress={handleSignIn}
+                  role={role}
                 />
                 <TouchableOpacity
                   onPress={() => {
@@ -676,11 +749,12 @@ export default function LoginPage() {
                 </View>
                 {error ? <Text style={dynamicStyles.error}>{error}</Text> : null}
                 <CartoonButton
-                  title={`${t("createAccount")} ${role === "kid" ? t("kid") : t("teacher")} 🎉`}
+                  title={role === "teacher" ? t("createAccount") : `${t("createAccount")} ${t("kid")} 🎉`}
                   loading={loading}
                   colors={roleColors[role]}
                   textColor="#fff"
                   onPress={handleSignUp}
+                  role={role}
                 />
                 <TouchableOpacity
                   onPress={() => {
@@ -711,11 +785,12 @@ export default function LoginPage() {
                 </View>
                 {error ? <Text style={dynamicStyles.error}>{error}</Text> : null}
                 <CartoonButton
-                  title={`${t("sendResetLink")} 📧`}
+                  title={role === "teacher" ? t("sendResetLink") : `${t("sendResetLink")} 📧`}
                   loading={loading}
                   colors={roleColors[role]}
                   textColor="#fff"
                   onPress={handleForgotPassword}
+                  role={role}
                 />
                 <TouchableOpacity
                   onPress={() => {
