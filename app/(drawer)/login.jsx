@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import {View,Text,TextInput,TouchableOpacity,ScrollView,StyleSheet, Dimensions,Image,Animated, KeyboardAvoidingView, Platform, Alert, Easing,} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import api from "../../src/api";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -10,9 +11,8 @@ import { useTheme } from "../../contexts/ThemeContext";
 const { width, height } = Dimensions.get("window");
 // Mock users for demo (in production, this would be from a backend)
 const mockUsers = {
-  kid: [
-    { id: "1", name: "Alex", email: "kid@test.com", password: "123456", role: "kid", parentPhone: "+1234567890" },
-    { id: "2", name: "Emma", email: "kid2@test.com", password: "123456", role: "kid", parentPhone: "+1234567891" },
+  parent: [
+    { id: "p1", name: "John Doe", email: "parent@test.com", password: "123456", role: "parent" },
   ],
   teacher: [
     { id: "t1", name: "Ms. Johnson", email: "teacher@test.com", password: "123456", role: "teacher" },
@@ -77,7 +77,7 @@ const FloatingEmoji = ({ emoji, delay = 0 }) => {
 };
 
 // Enhanced Button with role-specific styling
-function CartoonButton({ title, onPress, loading, colors, textColor = "#fff", role = "kid" }) {
+function CartoonButton({ title, onPress, loading, colors, textColor = "#fff", role = "parent" }) {
   const scale = useRef(new Animated.Value(1)).current;
   const handlePressIn = () => {
     Animated.spring(scale, {
@@ -88,8 +88,8 @@ function CartoonButton({ title, onPress, loading, colors, textColor = "#fff", ro
   const handlePressOut = () => {
     Animated.spring(scale, {
       toValue: 1,
-      friction: role === "teacher" ? 5 : 3,
-      tension: role === "teacher" ? 50 : 40,
+      friction: 5,
+      tension: 50,
       useNativeDriver: true,
     }).start();
   };
@@ -155,12 +155,10 @@ export default function LoginPage() {
   const { t } = useTranslation();
   const { colors } = useTheme();
 
-  const [role, setRole] = useState(Array.isArray(initialRole) ? initialRole[0] : initialRole || "kid");
+  const [role, setRole] = useState(Array.isArray(initialRole) ? initialRole[0] : initialRole || "parent");
   const [authMode, setAuthMode] = useState("signin");
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
-  const [childName, setChildName] = useState("");
-  const [parentPhone, setParentPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -177,19 +175,19 @@ export default function LoginPage() {
       tension: 80,
       useNativeDriver: true,
     }).start();
-    // Continuous pulse for kid mode
-    if (role === "kid") {
+    // Continuous pulse for parent mode (optional - can be removed)
+    if (role === "parent") {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.1,
-            duration: 1000,
+            toValue: 1.05,
+            duration: 2000,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
             toValue: 1,
-            duration: 1000,
+            duration: 2000,
             easing: Easing.inOut(Easing.sin),
             useNativeDriver: true,
           }),
@@ -197,20 +195,20 @@ export default function LoginPage() {
       ).start();
     }
   }, [role, logoAnim, pulseAnim]);
-  const roleIcons = { kid: "happy-outline", teacher: "school" };
-  // Professional colors for teacher, playful for kids
+  const roleIcons = { parent: "people", teacher: "school" };
+  // Professional colors for teacher and parent
   const roleColors = {
-    kid: ["#FF6B9D", "#FF8FB3", "#FFB6C1", "#FFE5F1"], // Bright pink gradient
+    parent: ["#10B981", "#34D399", "#6EE7B7", "#D1FAE5"], // Green gradient for parent
     teacher: ["#2563EB", "#3B82F6", "#60A5FA", "#EFF6FF"], // Professional blue gradient
   };
-  // Professional grays for teacher, bright colors for kids
+  // Professional themes for both roles
   const roleTheme = {
-    kid: {
-      background: ["#FFE5F1", "#FFB6C1", "#FF87A0"],
-      text: "#1F2937",
+    parent: {
+      background: ["#FFFFFF", "#F0FDF4", "#DCFCE7"], // Light green background
+      text: "#0F172A",
       inputBg: "#FFFFFF",
-      inputBorder: "#FFB6C1",
-      buttonShadow: "rgba(255, 107, 157, 0.4)",
+      inputBorder: "#A7F3D0",
+      buttonShadow: "rgba(16, 185, 129, 0.15)",
     },
     teacher: {
       background: ["#FFFFFF", "#F8FAFC", "#F1F5F9"], // Clean white to light gray - professional
@@ -221,31 +219,33 @@ export default function LoginPage() {
     },
   };
   const roleRouteMap = {
-    kid: "/dashboard/kids",
+    parent: "/dashboard/parent",
     teacher: "/dashboard/teacher",
   };
 
-  // Pre-fill fields for kids role
-  useEffect(() => {
-    if (role === "kid") {
-      if (authMode === "signin") {
-        setEmail("");
-        setPassword("");
-      } else if (authMode === "signup") {
-        setChildName("");
-        setParentPhone("");
-        setEmail("");
-        setPassword("");
-        setConfirmPassword("");
-      }
-    } else {
-      // Reset fields when switching to teacher
-      setEmail("");
-      setPassword("");
-      setChildName("");
-      setParentPhone("");
-      setConfirmPassword("");
+  const STORAGE = {
+    TEACHER_PROFILES: "@app_teacher_profiles_v1",
+  };
+
+  // Helper function to check if teacher has profile
+  const checkTeacherProfile = async (userId) => {
+    try {
+      const storedProfiles = await AsyncStorage.getItem(STORAGE.TEACHER_PROFILES);
+      if (!storedProfiles) return false;
+      const profiles = JSON.parse(storedProfiles);
+      return profiles[userId] ? true : false;
+    } catch (e) {
+      console.warn("Error checking teacher profile:", e);
+      return false;
     }
+  };
+
+  // Reset fields when switching roles
+  useEffect(() => {
+    setEmail("");
+    setPassword("");
+    setName("");
+    setConfirmPassword("");
   }, [role, authMode]);
   const handleSignIn = async () => {
     setError("");
@@ -267,7 +267,7 @@ export default function LoginPage() {
         try {
           const parsed = JSON.parse(storedUsers);
           allUsers = {
-            kid: [...mockUsers.kid, ...(parsed.kid || [])],
+            parent: [...mockUsers.parent, ...(parsed.parent || [])],
             teacher: [...mockUsers.teacher, ...(parsed.teacher || [])],
           };
         } catch (e) {
@@ -285,8 +285,18 @@ export default function LoginPage() {
         await AsyncStorage.setItem("role", role);
         await AsyncStorage.setItem("user", JSON.stringify(safeUser));
         setLoading(false);
-        setTimeout(() => {
-          router.replace(roleRouteMap[role]);
+        setTimeout(async () => {
+          // Check if teacher has profile, redirect to setup if not
+          if (role === "teacher") {
+            const hasProfile = await checkTeacherProfile(safeUser.id);
+            if (!hasProfile) {
+              router.replace("/teacher-profile-setup");
+            } else {
+              router.replace(roleRouteMap[role]);
+            }
+          } else {
+            router.replace(roleRouteMap[role]);
+          }
         }, 100);
       } else {
         setError(t("invalidCredentials"));
@@ -300,16 +310,10 @@ export default function LoginPage() {
   };
   const handleSignUp = async () => {
     setError("");
-    if (role === "kid") {
-      if (!childName || !email || !password || !parentPhone) {
-        setError(t("fillAllFields"));
-        return;
-      }
-    } else {
-      if (!name || !email || !password) {
-        setError(t("fillAllFields"));
-        return;
-      }
+    // Both parent and teacher need name, email, and password
+    if (!name || !email || !password) {
+      setError(t("fillAllFields"));
+      return;
     }
     if (password.length < 6) {
       setError(t("passwordTooShort"));
@@ -319,10 +323,6 @@ export default function LoginPage() {
       setError(t("passwordsNotMatch"));
       return;
     }
-    if (role === "parent" && !childName) {
-      setError("Enter child's name");
-      return;
-    }
 
     setLoading(true);
     await new Promise((r) => setTimeout(r, 800));
@@ -330,14 +330,13 @@ export default function LoginPage() {
     try {
       const newUser = {
         id: String(Date.now()),
-        name: role === "kid" ? childName || name : name,
+        name,
         email,
         role,
-        parentPhone: role === "kid" ? parentPhone : undefined,
       };
       // Save to storage
       const storedUsers = await AsyncStorage.getItem("@app_users");
-      let allUsers = { kid: [], teacher: [] };
+      let allUsers = { parent: [], teacher: [] };
       
       if (storedUsers) {
         try {
@@ -363,13 +362,32 @@ export default function LoginPage() {
       await AsyncStorage.setItem("user", JSON.stringify(userWithoutPassword));
       setLoading(false);
       // Use setTimeout to ensure state updates before navigation
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
-          router.replace(roleRouteMap[role]);
+          // Check if teacher has profile, redirect to setup if not
+          if (role === "teacher") {
+            const hasProfile = await checkTeacherProfile(userWithoutPassword.id);
+            if (!hasProfile) {
+              router.replace("/teacher-profile-setup");
+            } else {
+              router.replace(roleRouteMap[role]);
+            }
+          } else {
+            router.replace(roleRouteMap[role]);
+          }
         } catch (navError) {
           console.error("Navigation error:", navError);
           // Fallback: try push instead
-          router.push(roleRouteMap[role]);
+          if (role === "teacher") {
+            const hasProfile = await checkTeacherProfile(userWithoutPassword.id);
+            if (!hasProfile) {
+              router.push("/teacher-profile-setup");
+            } else {
+              router.push(roleRouteMap[role]);
+            }
+          } else {
+            router.push(roleRouteMap[role]);
+          }
         }
       }, 100);
     } catch (error) {
@@ -397,25 +415,25 @@ export default function LoginPage() {
     },
     logoContainer: {
       alignItems: "center",
-      marginBottom: role === "teacher" ? height * 0.05 : height * 0.03,
+      marginBottom: height * 0.05,
       position: "relative",
     },
     logo: {
-      width: width * (role === "teacher" ? 0.22 : 0.3),
-      height: width * (role === "teacher" ? 0.22 : 0.3),
-      borderRadius: (width * (role === "teacher" ? 0.22 : 0.3)) / 2,
-      borderWidth: role === "teacher" ? 2 : 4,
-      borderColor: role === "teacher" ? "#E2E8F0" : "#FFFFFF",
+      width: width * 0.22,
+      height: width * 0.22,
+      borderRadius: (width * 0.22) / 2,
+      borderWidth: 2,
+      borderColor: "#E2E8F0",
     },
     logoTitle: {
       marginTop: height * 0.02,
-      fontSize: width * (role === "teacher" ? 0.052 : 0.065),
-      fontWeight: role === "teacher" ? "600" : "900",
+      fontSize: width * 0.052,
+      fontWeight: "600",
       color: theme.text,
-      textShadowColor: role === "teacher" ? "transparent" : "rgba(0,0,0,0.1)",
-      textShadowOffset: { width: 0, height: role === "teacher" ? 0 : 2 },
-      textShadowRadius: role === "teacher" ? 0 : 4,
-      letterSpacing: role === "teacher" ? 0.8 : 0,
+      textShadowColor: "transparent",
+      textShadowOffset: { width: 0, height: 0 },
+      textShadowRadius: 0,
+      letterSpacing: 0.8,
     },
     roleRow: {
       flexDirection: "row",
@@ -423,93 +441,78 @@ export default function LoginPage() {
       justifyContent: "space-between",
       marginVertical: height * 0.025,
       gap: 12,
-      ...(role === "teacher" && {
-        backgroundColor: "#FFFFFF",
-        padding: 8,
-        borderRadius: 16,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 3,
-        elevation: 2,
-      }),
+      backgroundColor: "#FFFFFF",
+      padding: 8,
+      borderRadius: 16,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      elevation: 2,
     },
     roleTab: {
       flex: 1,
-      paddingVertical: height * (role === "teacher" ? 0.015 : 0.018),
-      borderRadius: role === "teacher" ? 12 : 25,
-      backgroundColor: role === "teacher" ? "transparent" : "#fff",
+      paddingVertical: height * 0.015,
+      borderRadius: 12,
+      backgroundColor: "transparent",
       alignItems: "center",
-      elevation: role === "teacher" ? 0 : 3,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: role === "teacher" ? 0 : 0.1,
-      shadowRadius: 4,
-      borderWidth: role === "teacher" ? 1.5 : 0,
-      borderColor: role === "teacher" ? "#E2E8F0" : "transparent",
+      borderWidth: 1.5,
+      borderColor: "#E2E8F0",
     },
     roleTabActive: {
-      backgroundColor: role === "teacher" ? roleColors[role][0] : roleColors[role][0],
-      transform: [{ scale: role === "teacher" ? 1 : 1.05 }],
-      borderColor: role === "teacher" ? roleColors[role][0] : "transparent",
+      backgroundColor: roleColors[role][0],
+      borderColor: roleColors[role][0],
     },
     roleTabText: {
       marginTop: height * 0.005,
-      color: role === "teacher" ? "#64748B" : colors.text,
-      fontWeight: role === "teacher" ? "600" : "700",
-      fontSize: width * (role === "teacher" ? 0.035 : 0.038),
+      color: "#64748B",
+      fontWeight: "600",
+      fontSize: width * 0.035,
     },
     inputBox: {
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: theme.inputBg,
-      paddingHorizontal: width * (role === "teacher" ? 0.05 : 0.045),
-      paddingVertical: height * (role === "teacher" ? 0.018 : 0.018),
-      borderRadius: role === "teacher" ? 10 : 20,
-      marginBottom: height * (role === "teacher" ? 0.02 : 0.018),
-      borderWidth: role === "teacher" ? 1 : 2,
-      borderColor: role === "teacher" ? "#E2E8F0" : "#e2e8f0",
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: role === "teacher" ? 0 : 2 },
-      shadowOpacity: role === "teacher" ? 0 : 0.05,
-      shadowRadius: role === "teacher" ? 0 : 4,
-      elevation: role === "teacher" ? 0 : 2,
+      paddingHorizontal: width * 0.05,
+      paddingVertical: height * 0.018,
+      borderRadius: 10,
+      marginBottom: height * 0.02,
+      borderWidth: 1,
+      borderColor: "#E2E8F0",
     },
     inputBoxFocused: {
       borderColor: roleColors[role][1],
-      borderWidth: role === "teacher" ? 2 : 2,
-      ...(role === "teacher" && {
-        shadowColor: roleColors[role][0],
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      }),
+      borderWidth: 2,
+      shadowColor: roleColors[role][0],
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
     },
     input: {
       marginLeft: 12,
       flex: 1,
-      fontSize: width * (role === "teacher" ? 0.04 : 0.042),
+      fontSize: width * 0.04,
       color: theme.text,
-      fontWeight: role === "teacher" ? "400" : "500",
+      fontWeight: "400",
     },
     switchText: {
       marginTop: height * 0.02,
       textAlign: "center",
-      color: role === "teacher" ? "#64748B" : "#555",
-      fontSize: width * (role === "teacher" ? 0.034 : 0.036),
+      color: "#64748B",
+      fontSize: width * 0.034,
       textDecorationLine: "underline",
-      fontWeight: role === "teacher" ? "500" : "600",
+      fontWeight: "500",
     },
     error: {
       color: "#DC2626",
       textAlign: "center",
       marginBottom: height * 0.01,
-      fontSize: width * (role === "teacher" ? 0.034 : 0.036),
-      fontWeight: role === "teacher" ? "500" : "600",
-      backgroundColor: role === "teacher" ? "#FEF2F2" : "#ffe6e6",
-      padding: role === "teacher" ? 12 : 10,
-      borderRadius: role === "teacher" ? 8 : 10,
-      borderWidth: role === "teacher" ? 1 : 0,
-      borderColor: role === "teacher" ? "#FECACA" : "transparent",
+      fontSize: width * 0.034,
+      fontWeight: "500",
+      backgroundColor: "#FEF2F2",
+      padding: 12,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: "#FECACA",
     },
     footer: {
       marginTop: height * 0.04,
@@ -527,26 +530,18 @@ export default function LoginPage() {
   });
   return (
     <LinearGradient colors={roleTheme[role].background} style={dynamicStyles.page}>
-      {/* Floating emojis for kids */}
-      {role === "kid" && (
-        <View style={dynamicStyles.floatingEmojis} pointerEvents="none">
-          <FloatingEmoji emoji="🌟" delay={0} />
-          <FloatingEmoji emoji="🎈" delay={500} />
-          <FloatingEmoji emoji="🎨" delay={1000} />
-        </View>
-      )}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={dynamicStyles.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           {/* Animated Logo */}
           <Animated.View
             style={[
               dynamicStyles.logoContainer,
-              {
-                transform: [
-                  { scale: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) },
-                  { scale: role === "kid" ? pulseAnim : 1 },
-                ],
-              },
+                {
+                  transform: [
+                    { scale: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) },
+                    { scale: role === "parent" ? pulseAnim : 1 },
+                  ],
+                },
             ]}
           >
             <View
@@ -577,21 +572,21 @@ export default function LoginPage() {
               />
             </View>
             <Text style={dynamicStyles.logoTitle}>{t("appTitle")}</Text>
-            {role === "kid" && (
-              <Text style={{ marginTop: 5, fontSize: width * 0.035, color: "#666", fontWeight: "600" }}>
-                🎉 {t("kidDescription")} 🎉
+            {role === "parent" && (
+              <Text style={{ marginTop: 10, fontSize: width * 0.033, color: "#64748B", fontWeight: "400", letterSpacing: 0.3 }}>
+                {t("parentDescription")}
               </Text>
             )}
             {role === "teacher" && (
               <Text style={{ marginTop: 10, fontSize: width * 0.033, color: "#64748B", fontWeight: "400", letterSpacing: 0.3 }}>
-                Professional Teaching Dashboard
+                {t("teacherDescription")}
               </Text>
             )}
           </Animated.View>
           {/* Role Tabs */}
           {authMode !== "forgot" && (
             <View style={dynamicStyles.roleRow}>
-              {["kid", "teacher"].map((r) => {
+              {["parent", "teacher"].map((r) => {
                 const active = role === r;
                 return (
                   <TouchableOpacity
@@ -602,9 +597,9 @@ export default function LoginPage() {
                       setError("");
                     }}
                   >
-                    <Ionicons name={roleIcons[r]} size={26} color={active ? "#fff" : "#333"} />
+                    <Ionicons name={roleIcons[r]} size={26} color={active ? "#fff" : "#64748B"} />
                     <Text style={[dynamicStyles.roleTabText, active && { color: "#fff" }]}>
-                      {r === "kid" ? `👶 ${t("kid")}` : `👨‍🏫 ${t("teacher")}`}
+                      {r === "parent" ? `👨‍👩‍👧 ${t("parent")}` : `👨‍🏫 ${t("teacher")}`}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -650,7 +645,7 @@ export default function LoginPage() {
                 </TouchableOpacity>
                 {error ? <Text style={dynamicStyles.error}>{error}</Text> : null}
                 <CartoonButton
-                  title={role === "teacher" ? t("signIn") : `${t("signIn")} ${t("kid")} 👶`}
+                  title={t("signIn")}
                   loading={loading}
                   colors={roleColors[role]}
                   onPress={handleSignIn}
@@ -668,57 +663,29 @@ export default function LoginPage() {
             )}
             {authMode === "signup" && (
               <>
-                {role === "kid" && (
-                  <>
-                    <View style={dynamicStyles.inputBox}>
-                      <Ionicons name="person" size={20} color={roleColors[role][1]} />
-                      <TextInput
-                        placeholder={t("childName")}
-                        placeholderTextColor="#999"
-                        value={childName}
-                        onChangeText={setChildName}
-                        style={dynamicStyles.input}
-                      />
-                    </View>
-                    <View style={dynamicStyles.inputBox}>
-                      <Ionicons name="call" size={20} color={roleColors[role][1]} />
-                      <TextInput
-                        placeholder={t("parentPhone") || "Parent's Phone Number"}
-                        placeholderTextColor="#999"
-                        value={parentPhone}
-                        onChangeText={setParentPhone}
-                        keyboardType="phone-pad"
-                        style={dynamicStyles.input}
-                      />
-                    </View>
-                  </>
-                )}
                 <View style={dynamicStyles.inputBox}>
-                  <Ionicons name={role === "kid" ? "mail" : "person"} size={20} color={roleColors[role][1]} />
+                  <Ionicons name="person" size={20} color={roleColors[role][1]} />
                   <TextInput
-                    placeholder={role === "kid" ? t("email") : t("fullName")}
+                    placeholder={t("fullName")}
                     placeholderTextColor="#999"
-                    value={role === "kid" ? email : name}
-                    onChangeText={role === "kid" ? setEmail : setName}
-                    autoCapitalize="none"
-                    keyboardType={role === "kid" ? "email-address" : "default"}
+                    value={name}
+                    onChangeText={setName}
+                    autoCapitalize="words"
                     style={dynamicStyles.input}
                   />
                 </View>
-                {role === "teacher" && (
-                  <View style={dynamicStyles.inputBox}>
-                    <Ionicons name="mail" size={20} color={roleColors[role][1]} />
-                    <TextInput
-                      placeholder={t("email")}
-                      placeholderTextColor="#999"
-                      value={email}
-                      onChangeText={setEmail}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      style={dynamicStyles.input}
-                    />
-                  </View>
-                )}
+                <View style={dynamicStyles.inputBox}>
+                  <Ionicons name="mail" size={20} color={roleColors[role][1]} />
+                  <TextInput
+                    placeholder={t("email")}
+                    placeholderTextColor="#999"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    style={dynamicStyles.input}
+                  />
+                </View>
                 <View style={dynamicStyles.inputBox}>
                   <Ionicons name="lock-closed" size={20} color={roleColors[role][1]} />
                   <TextInput
@@ -749,7 +716,7 @@ export default function LoginPage() {
                 </View>
                 {error ? <Text style={dynamicStyles.error}>{error}</Text> : null}
                 <CartoonButton
-                  title={role === "teacher" ? t("createAccount") : `${t("createAccount")} ${t("kid")} 🎉`}
+                  title={t("createAccount")}
                   loading={loading}
                   colors={roleColors[role]}
                   textColor="#fff"
@@ -785,7 +752,7 @@ export default function LoginPage() {
                 </View>
                 {error ? <Text style={dynamicStyles.error}>{error}</Text> : null}
                 <CartoonButton
-                  title={role === "teacher" ? t("sendResetLink") : `${t("sendResetLink")} 📧`}
+                  title={t("sendResetLink")}
                   loading={loading}
                   colors={roleColors[role]}
                   textColor="#fff"

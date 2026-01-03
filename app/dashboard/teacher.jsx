@@ -14,6 +14,8 @@ import {
   Easing,
   Platform,
   KeyboardAvoidingView,
+  Dimensions,
+  Modal,
 } from "react-native";
 import api from "../../src/api";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -25,7 +27,11 @@ import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import i18n from "../../i18n";
 import { useLanguage } from "../../contexts/LanguageContext";
+import { useUser } from "../../contexts/UserContext";
 
+const { width, height } = Dimensions.get("window");
+const isTablet = width >= 768;
+const isSmallScreen = width < 375;
 
 const STORAGE = {
   LESSONS: "@app_lessons_v1",
@@ -34,6 +40,7 @@ const STORAGE = {
   // progress for teachers - tracks per student
   PROGRESS: "@app_progress_v1",
   STUDENT_PROGRESS: "@app_student_progress_v1", // { studentId: { lessonsCompleted: [], videosCompleted: [], videoWatchingDetails: [], quizResults: [] } }
+  TEACHER_PROFILES: "@app_teacher_profiles_v1",
 };
 
 // Helper function to format duration in days, hours, minutes, seconds
@@ -73,6 +80,8 @@ const AnimatedPressable = ({ children, onPress, style }) => {
 export default function TeacherDashboard() {
   const router = useRouter();
   const { language, changeLanguage } = useLanguage();
+  const { user } = useUser();
+  const [teacherProfile, setTeacherProfile] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
@@ -150,6 +159,41 @@ export default function TeacherDashboard() {
       console.log(e);
     }
   };
+
+  // Check teacher profile on mount
+  useEffect(() => {
+    const checkTeacherProfile = async () => {
+      if (!user || user.role !== "teacher") {
+        router.replace("/(drawer)/login");
+        return;
+      }
+
+      try {
+        const storedProfiles = await AsyncStorage.getItem(STORAGE.TEACHER_PROFILES);
+        if (!storedProfiles) {
+          // No profile found, redirect to setup
+          router.replace("/teacher-profile-setup");
+          return;
+        }
+
+        const profiles = JSON.parse(storedProfiles);
+        const profile = profiles[user.id];
+
+        if (!profile) {
+          // Profile not found for this user, redirect to setup
+          router.replace("/teacher-profile-setup");
+          return;
+        }
+
+        setTeacherProfile(profile);
+      } catch (e) {
+        console.warn("Error checking teacher profile:", e);
+        router.replace("/teacher-profile-setup");
+      }
+    };
+
+    checkTeacherProfile();
+  }, [user, router]);
 
   // load stored data
   useEffect(() => {
@@ -655,6 +699,16 @@ useFocusEffect(
     );
   };
 
+  // Don't render if profile check is in progress or no profile exists
+  if (!teacherProfile) {
+    return (
+      <SafeAreaView style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={{ marginTop: 10, color: "#444" }}>Loading profile...</Text>
+      </SafeAreaView>
+    );
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
@@ -717,139 +771,245 @@ useFocusEffect(
         </View>
       </View>
 
-      {/* dashboard or lists */}
-      {detail ? (
-        // Inline detail / preview
-        <View style={{ flex: 1 }}>
-          <View style={{ padding: 12, borderBottomWidth: 1, borderColor: "#eee" }}>
-            <TouchableOpacity style={{ flexDirection: "row", alignItems: "center" }} onPress={() => setDetail(null)}>
-              <Ionicons name="arrow-back" size={22} color="#333" />
-              <Text style={{ marginLeft: 8, fontWeight: "800" }}>{i18n.t('back')}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {detail.type === "lessons" && (
-            <ScrollView contentContainerStyle={{ padding: 18 }}>
-              <Text style={styles.lessonTitle}>{detail.item.title}</Text>
-              <Text style={styles.lessonDesc}>{detail.item.description || i18n.t('noDescription')}</Text>
-              <Text style={{ marginTop: 12, color: "#666" }}>{i18n.t('category')}: {detail.item.category || i18n.t('dash')}</Text>
-              {detail.item.pdfUri ? (
-                <View style={{ marginTop: 12, padding: 12, backgroundColor: "#f0f0f0", borderRadius: 8 }}>
-                  <Ionicons name="document-text" size={24} color="#4c1d95" />
-                  <Text style={{ marginTop: 4, color: "#666" }}>{i18n.t('pdfUploaded')}</Text>
-                </View>
-              ) : (
-                <Text style={{ marginTop: 12, color: "#999", fontStyle: "italic" }}>{i18n.t('noPdfUploaded')}</Text>
-              )}
-
-              <View style={{ flexDirection: "row", marginTop: 18 }}>
-                <TouchableOpacity
-                  style={[styles.smallBtn, { marginRight: 12 }]}
-                  onPress={() => {
-                    // start editing this lesson
-                    startEditLesson(detail.item.id);
-                    setDetail(null);
-                    setSelectedSection("lessons");
-                  }}
-                >
-                  <Text style={styles.smallBtnText}>{i18n.t('edit')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.smallBtn, { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd" }]}
-                  onPress={() => deleteLesson(detail.item.id)}
-                >
-                  <Text style={[styles.smallBtnText, { color: "red" }]}>{i18n.t('delete')}</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          )}
-
-          {detail.type === "videos" && (
-            <View style={{ flex: 1 }}>
-              <View style={{ padding: 18 }}>
-              <Text style={styles.lessonTitle}>{detail.item.title}</Text>
-              <Text style={{ marginTop: 8 }}>{detail.item.description || i18n.t('noDescription')}</Text>
-              <Text style={{ marginTop: 8, color: "#666" }}>{i18n.t('uri')}: {detail.item.uri}</Text>
-              </View>
-
-              <View style={{ padding: 18 }}>
-                <TouchableOpacity
-                  style={styles.smallBtn}
-                  onPress={() => {
-                    startEditVideo(detail.item.id);
-                    setDetail(null);
-                    setSelectedSection("videos");
-                  }}
-                >
-                  <Text style={styles.smallBtnText}>{i18n.t('edit')}</Text>
-                </TouchableOpacity>
-              </View>
+      {/* Fullscreen Modal for detail view */}
+      <Modal
+        visible={!!detail}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setDetail(null)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+          <View style={{ flex: 1 }}>
+            {/* Header with close button */}
+            <View style={styles.fullscreenHeader}>
+              <TouchableOpacity
+                style={styles.fullscreenCloseButton}
+                onPress={() => setDetail(null)}
+              >
+                <Ionicons name="close" size={28} color="#000" />
+              </TouchableOpacity>
+              <Text style={styles.fullscreenHeaderTitle}>
+                {detail?.type === "lessons" ? i18n.t('lesson') : detail?.type === "videos" ? i18n.t('video') : i18n.t('quiz')}
+              </Text>
+              <View style={{ width: 44 }} />
             </View>
-          )}
 
-          {detail.type === "quizzes" && (
-            <ScrollView contentContainerStyle={{ padding: 18 }}>
-              <Text style={[styles.lessonTitle, { marginBottom: 12 }]}>{detail.item.title}</Text>
-              {(detail.item.questions || []).map((q, i) => (
-                <View key={q.id || i} style={{ marginBottom: 12, padding: 12, backgroundColor: "#f5f5f5", borderRadius: 8 }}>
-                  <Text style={{ fontWeight: "800" }}>{i + 1}. {q.question} {q.type && `[${q.type}]`}</Text>
-                  {q.type === "image" && q.imageUri && (
-                    <Image source={{ uri: q.imageUri }} style={{ width: "100%", height: 150, marginTop: 8, borderRadius: 8, resizeMode: "contain" }} />
-                  )}
-                  {q.type === "audio" && q.audioUri && (
-                    <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center" }}>
-                      <Ionicons name="musical-notes" size={20} color="#4c1d95" />
-                      <Text style={{ marginLeft: 8, color: "#666" }}>Audio question</Text>
-                    </View>
-                  )}
-                  {q.options.map((o, j) => (
-                    <View key={j} style={{ marginLeft: 12, marginTop: 4 }}>
-                      {typeof o === "string" ? (
-                        <Text style={{ color: q.answerIndex === j ? "green" : "#111", fontWeight: q.answerIndex === j ? "700" : "400" }}>
-                          • {o}
-                        </Text>
-                      ) : o.type === "image" && o.imageUri ? (
-                        <View>
-                          <Text style={{ color: q.answerIndex === j ? "green" : "#111", fontWeight: q.answerIndex === j ? "700" : "400" }}>
-                            • Option {j + 1} (Image):
-                          </Text>
-                          <Image source={{ uri: o.imageUri }} style={{ width: "80%", height: 100, marginTop: 4, borderRadius: 8, resizeMode: "contain" }} />
-                        </View>
-                      ) : o.type === "audio" && o.audioUri ? (
-                        <View style={{ flexDirection: "row", alignItems: "center" }}>
-                          <Text style={{ color: q.answerIndex === j ? "green" : "#111", fontWeight: q.answerIndex === j ? "700" : "400" }}>
-                            • {i18n.t('option')} {j + 1} ({i18n.t('audio')})
-                          </Text>
-                          <Ionicons name="musical-notes" size={16} color={q.answerIndex === j ? "green" : "#666"} style={{ marginLeft: 4 }} />
-                        </View>
-                      ) : (
-                        <Text style={{ color: q.answerIndex === j ? "green" : "#111" }}>• {i18n.t('option')} {j + 1}</Text>
-                      )}
-                    </View>
-                  ))}
+            {detail?.type === "lessons" && (
+              <ScrollView contentContainerStyle={[
+                styles.fullscreenContent,
+                { paddingHorizontal: isTablet ? 40 : isSmallScreen ? 12 : 18, maxWidth: isTablet ? 900 : "100%", alignSelf: "center", width: "100%" }
+              ]}>
+                <Text style={[styles.lessonTitle, { fontSize: isTablet ? 32 : 24 }]}>
+                  {detail.item.title}
+                </Text>
+                <Text style={[styles.lessonDesc, { fontSize: isTablet ? 18 : 16 }]}>
+                  {detail.item.description || i18n.t('noDescription')}
+                </Text>
+                <Text style={{ marginTop: 12, color: "#666", fontSize: isTablet ? 16 : 14 }}>
+                  {i18n.t('category')}: {detail.item.category || i18n.t('dash')}
+                </Text>
+                {detail.item.pdfUri ? (
+                  <View style={{ marginTop: 12, padding: 16, backgroundColor: "#f0f0f0", borderRadius: 8 }}>
+                    <Ionicons name="document-text" size={isTablet ? 32 : 24} color="#4c1d95" />
+                    <Text style={{ marginTop: 4, color: "#666", fontSize: isTablet ? 16 : 14 }}>
+                      {i18n.t('pdfUploaded')}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={{ marginTop: 12, color: "#999", fontStyle: "italic", fontSize: isTablet ? 16 : 14 }}>
+                    {i18n.t('noPdfUploaded')}
+                  </Text>
+                )}
+
+                <View style={{ flexDirection: "row", marginTop: 24, gap: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { padding: isTablet ? 16 : 12 }]}
+                    onPress={() => {
+                      startEditLesson(detail.item.id);
+                      setDetail(null);
+                      setSelectedSection("lessons");
+                    }}
+                  >
+                    <Text style={[styles.smallBtnText, { fontSize: isTablet ? 16 : 14 }]}>
+                      {i18n.t('edit')}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd", padding: isTablet ? 16 : 12 }]}
+                    onPress={() => {
+                      deleteLesson(detail.item.id);
+                      setDetail(null);
+                    }}
+                  >
+                    <Text style={[styles.smallBtnText, { color: "red", fontSize: isTablet ? 16 : 14 }]}>
+                      {i18n.t('delete')}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              ))}
+              </ScrollView>
+            )}
 
-              <View style={{ flexDirection: "row", marginTop: 12 }}>
-                <TouchableOpacity
-                  style={[styles.smallBtn, { marginRight: 12 }]}
-                  onPress={() => {
-                    startEditQuiz(detail.item.id);
-                    setDetail(null);
-                    setSelectedSection("quizzes");
-                  }}
-                >
-                  <Text style={styles.smallBtnText}>{i18n.t('edit')}</Text>
-                </TouchableOpacity>
+            {detail?.type === "videos" && (
+              <ScrollView contentContainerStyle={[
+                styles.fullscreenContent,
+                { paddingHorizontal: isTablet ? 40 : isSmallScreen ? 12 : 18, maxWidth: isTablet ? 900 : "100%", alignSelf: "center", width: "100%" }
+              ]}>
+                <Text style={[styles.lessonTitle, { fontSize: isTablet ? 32 : 24 }]}>
+                  {detail.item.title}
+                </Text>
+                <Text style={{ marginTop: 12, fontSize: isTablet ? 18 : 16 }}>
+                  {detail.item.description || i18n.t('noDescription')}
+                </Text>
+                <Text style={{ marginTop: 12, color: "#666", fontSize: isTablet ? 16 : 14 }}>
+                  {i18n.t('uri')}: {detail.item.uri}
+                </Text>
 
-                <TouchableOpacity style={[styles.smallBtn, { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd" }]} onPress={() => deleteQuiz(detail.item.id)}>
-                  <Text style={[styles.smallBtnText, { color: "red" }]}>{i18n.t('delete')}</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          )}
-        </View>
-      ) : (
+                <View style={{ marginTop: 24 }}>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { padding: isTablet ? 16 : 12 }]}
+                    onPress={() => {
+                      startEditVideo(detail.item.id);
+                      setDetail(null);
+                      setSelectedSection("videos");
+                    }}
+                  >
+                    <Text style={[styles.smallBtnText, { fontSize: isTablet ? 16 : 14 }]}>
+                      {i18n.t('edit')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
+
+            {detail?.type === "quizzes" && (
+              <ScrollView contentContainerStyle={[
+                styles.fullscreenContent,
+                { paddingHorizontal: isTablet ? 40 : isSmallScreen ? 12 : 18, maxWidth: isTablet ? 900 : "100%", alignSelf: "center", width: "100%" }
+              ]}>
+                <Text style={[
+                  styles.lessonTitle,
+                  { marginBottom: 16, fontSize: isTablet ? 32 : 24 }
+                ]}>
+                  {detail.item.title}
+                </Text>
+                {(detail.item.questions || []).map((q, i) => (
+                  <View key={q.id || i} style={{
+                    marginBottom: isTablet ? 20 : 12,
+                    padding: isTablet ? 20 : 12,
+                    backgroundColor: "#f5f5f5",
+                    borderRadius: 8
+                  }}>
+                    <Text style={{ fontWeight: "800", fontSize: isTablet ? 18 : 16 }}>
+                      {i + 1}. {q.question} {q.type && `[${q.type}]`}
+                    </Text>
+                    {q.type === "image" && q.imageUri && (
+                      <Image
+                        source={{ uri: q.imageUri }}
+                        style={{
+                          width: "100%",
+                          height: isTablet ? 250 : 150,
+                          marginTop: 8,
+                          borderRadius: 8,
+                          resizeMode: "contain"
+                        }}
+                      />
+                    )}
+                    {q.type === "audio" && q.audioUri && (
+                      <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center" }}>
+                        <Ionicons name="musical-notes" size={isTablet ? 24 : 20} color="#4c1d95" />
+                        <Text style={{ marginLeft: 8, color: "#666", fontSize: isTablet ? 16 : 14 }}>
+                          Audio question
+                        </Text>
+                      </View>
+                    )}
+                    {q.options.map((o, j) => (
+                      <View key={j} style={{ marginLeft: 12, marginTop: 8 }}>
+                        {typeof o === "string" ? (
+                          <Text style={{
+                            color: q.answerIndex === j ? "green" : "#111",
+                            fontWeight: q.answerIndex === j ? "700" : "400",
+                            fontSize: isTablet ? 16 : 14
+                          }}>
+                            • {o}
+                          </Text>
+                        ) : o.type === "image" && o.imageUri ? (
+                          <View>
+                            <Text style={{
+                              color: q.answerIndex === j ? "green" : "#111",
+                              fontWeight: q.answerIndex === j ? "700" : "400",
+                              fontSize: isTablet ? 16 : 14
+                            }}>
+                              • Option {j + 1} (Image):
+                            </Text>
+                            <Image
+                              source={{ uri: o.imageUri }}
+                              style={{
+                                width: "80%",
+                                height: isTablet ? 150 : 100,
+                                marginTop: 4,
+                                borderRadius: 8,
+                                resizeMode: "contain"
+                              }}
+                            />
+                          </View>
+                        ) : o.type === "audio" && o.audioUri ? (
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <Text style={{
+                              color: q.answerIndex === j ? "green" : "#111",
+                              fontWeight: q.answerIndex === j ? "700" : "400",
+                              fontSize: isTablet ? 16 : 14
+                            }}>
+                              • {i18n.t('option')} {j + 1} ({i18n.t('audio')})
+                            </Text>
+                            <Ionicons name="musical-notes" size={16} color={q.answerIndex === j ? "green" : "#666"} style={{ marginLeft: 4 }} />
+                          </View>
+                        ) : (
+                          <Text style={{
+                            color: q.answerIndex === j ? "green" : "#111",
+                            fontSize: isTablet ? 16 : 14
+                          }}>
+                            • {i18n.t('option')} {j + 1}
+                          </Text>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                ))}
+
+                <View style={{ flexDirection: "row", marginTop: 24, gap: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { padding: isTablet ? 16 : 12 }]}
+                    onPress={() => {
+                      startEditQuiz(detail.item.id);
+                      setDetail(null);
+                      setSelectedSection("quizzes");
+                    }}
+                  >
+                    <Text style={[styles.smallBtnText, { fontSize: isTablet ? 16 : 14 }]}>
+                      {i18n.t('edit')}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd", padding: isTablet ? 16 : 12 }]}
+                    onPress={() => {
+                      deleteQuiz(detail.item.id);
+                      setDetail(null);
+                    }}
+                  >
+                    <Text style={[styles.smallBtnText, { color: "red", fontSize: isTablet ? 16 : 14 }]}>
+                      {i18n.t('delete')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Main Content - only show when detail is not active */}
+      {!detail && (
         // Main content
         <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
           {/* Dashboard */}
@@ -877,65 +1037,77 @@ useFocusEffect(
               </View>
 
               <View style={styles.gridRow}>
-                <AnimatedPressable onPress={() => setSelectedSection("videos")} style={{ flex: 1 }}>
-                  <View style={styles.dashboardCard}>
+                <AnimatedPressable onPress={() => setSelectedSection("videos")} style={{ flex: 1, minWidth: 0 }}>
+                  <View style={[styles.dashboardCard, { padding: isTablet ? 24 : isSmallScreen ? 12 : 16 }]}>
                     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
                       <View style={{ 
-                        width: 40, 
-                        height: 40, 
-                        borderRadius: 20, 
+                        width: isSmallScreen ? 36 : 40, 
+                        height: isSmallScreen ? 36 : 40, 
+                        borderRadius: isSmallScreen ? 18 : 20, 
                         backgroundColor: "#FEF2F2", 
                         justifyContent: "center", 
                         alignItems: "center",
                         marginRight: 12,
                       }}>
-                        <Ionicons name="videocam" size={20} color="#DC2626" />
+                        <Ionicons name="videocam" size={isSmallScreen ? 18 : 20} color="#DC2626" />
                       </View>
-                      <Text style={styles.dashboardCardTitle}>{i18n.t('videos')}</Text>
+                      <Text style={[styles.dashboardCardTitle, { fontSize: isTablet ? 19 : isSmallScreen ? 15 : 17 }]}>
+                        {i18n.t('videos')}
+                      </Text>
                     </View>
-                    <Text style={styles.dashboardCardSubtitle}>{videos.length} {i18n.t('available')}</Text>
+                    <Text style={[styles.dashboardCardSubtitle, { fontSize: isTablet ? 14 : isSmallScreen ? 11 : 13 }]}>
+                      {videos.length} {i18n.t('available')}
+                    </Text>
                   </View>
                 </AnimatedPressable>
               </View>
 
               <View style={styles.gridRow}>
-                <AnimatedPressable onPress={() => setSelectedSection("quizzes")} style={{ flex: 1 }}>
-                  <View style={styles.dashboardCard}>
+                <AnimatedPressable onPress={() => setSelectedSection("quizzes")} style={{ flex: 1, minWidth: 0 }}>
+                  <View style={[styles.dashboardCard, { padding: isTablet ? 24 : isSmallScreen ? 12 : 16 }]}>
                     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
                       <View style={{ 
-                        width: 40, 
-                        height: 40, 
-                        borderRadius: 20, 
+                        width: isSmallScreen ? 36 : 40, 
+                        height: isSmallScreen ? 36 : 40, 
+                        borderRadius: isSmallScreen ? 18 : 20, 
                         backgroundColor: "#F0FDF4", 
                         justifyContent: "center", 
                         alignItems: "center",
                         marginRight: 12,
                       }}>
-                        <Ionicons name="help-circle" size={20} color="#16A34A" />
+                        <Ionicons name="help-circle" size={isSmallScreen ? 18 : 20} color="#16A34A" />
                       </View>
-                      <Text style={styles.dashboardCardTitle}>{i18n.t('quizzes')}</Text>
+                      <Text style={[styles.dashboardCardTitle, { fontSize: isTablet ? 19 : isSmallScreen ? 15 : 17 }]}>
+                        {i18n.t('quizzes')}
+                      </Text>
                     </View>
-                    <Text style={styles.dashboardCardSubtitle}>{Object.keys(quizzes).length} {i18n.t('available')}</Text>
+                    <Text style={[styles.dashboardCardSubtitle, { fontSize: isTablet ? 14 : isSmallScreen ? 11 : 13 }]}>
+                      {Object.keys(quizzes).length} {i18n.t('available')}
+                    </Text>
                   </View>
                 </AnimatedPressable>
 
-                <AnimatedPressable onPress={() => { setSelectedSection("progress"); refreshProgress(); }} style={{ flex: 1 }}>
-                  <View style={styles.dashboardCard}>
+                <AnimatedPressable onPress={() => { setSelectedSection("progress"); refreshProgress(); }} style={{ flex: 1, minWidth: 0 }}>
+                  <View style={[styles.dashboardCard, { padding: isTablet ? 24 : isSmallScreen ? 12 : 16 }]}>
                     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
                       <View style={{ 
-                        width: 40, 
-                        height: 40, 
-                        borderRadius: 20, 
+                        width: isSmallScreen ? 36 : 40, 
+                        height: isSmallScreen ? 36 : 40, 
+                        borderRadius: isSmallScreen ? 18 : 20, 
                         backgroundColor: "#FEF3C7", 
                         justifyContent: "center", 
                         alignItems: "center",
                         marginRight: 12,
                       }}>
-                        <Ionicons name="bar-chart" size={20} color="#D97706" />
+                        <Ionicons name="bar-chart" size={isSmallScreen ? 18 : 20} color="#D97706" />
                       </View>
-                      <Text style={styles.dashboardCardTitle}>{i18n.t('progress')}</Text>
+                      <Text style={[styles.dashboardCardTitle, { fontSize: isTablet ? 19 : isSmallScreen ? 15 : 17 }]}>
+                        {i18n.t('progress')}
+                      </Text>
                     </View>
-                    <Text style={styles.dashboardCardSubtitle}>{i18n.t('viewAnalytics')}</Text>
+                    <Text style={[styles.dashboardCardSubtitle, { fontSize: isTablet ? 14 : isSmallScreen ? 11 : 13 }]}>
+                      {i18n.t('viewAnalytics')}
+                    </Text>
                   </View>
                 </AnimatedPressable>
               </View>
@@ -1548,7 +1720,14 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: "#fff", fontWeight: "600", fontSize: 13, letterSpacing: 0.2 },
   contentScroll: { padding: 16, flexGrow: 1, paddingBottom: 36 },
-  gridRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", marginBottom: 14, gap: 12 },
+  gridRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    marginBottom: 14,
+    gap: 12,
+    flexWrap: "nowrap",
+  },
   dashboardCard: {
     backgroundColor: "#FFFFFF",
     padding: 20,
@@ -1562,6 +1741,8 @@ const styles = StyleSheet.create({
     elevation: 1,
     minHeight: 110,
     justifyContent: "center",
+    flex: 1,
+    minWidth: 0,
   },
   dashboardCardTitle: { fontSize: 17, fontWeight: "600", color: "#0F172A", letterSpacing: 0.2 },
   dashboardCardSubtitle: { marginTop: 8, color: "#64748B", fontSize: 13, fontWeight: "400", letterSpacing: 0.1 },
@@ -1761,5 +1942,34 @@ const styles = StyleSheet.create({
   optionTypeBtnTextSelected: {
     color: "#fff",
     fontWeight: "700",
+  },
+  // Fullscreen Modal Styles
+  fullscreenHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
+  },
+  fullscreenCloseButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullscreenHeaderTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#000",
+  },
+  fullscreenContent: {
+    paddingTop: 20,
+    paddingBottom: 40,
+    flexGrow: 1,
   },
 });

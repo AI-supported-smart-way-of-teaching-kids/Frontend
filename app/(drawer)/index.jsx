@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useTranslation } from "react-i18next";
-import LottieView from "lottie-react-native";
+// import LottieView from "lottie-react-native"; // Disabled - not currently used
 import kidimage from "@/assets/images/kidimage.png";
 
 // Dynamic screen dimensions hook
@@ -609,7 +609,7 @@ export default function Index() {
             {/* Flower that follows touch */}
             <Flower />
             <View style={dynamicStyles.content}>
-              {/* Lottie Animation - Animated kid character or illustration */}
+              {/* Lottie Animation - Disabled (uncomment and install @lottiefiles/dotlottie-react if needed)
               {ENABLE_LOTTIE && LOTTIE_SOURCE && (
                 <Animated.View
                   style={[
@@ -632,6 +632,7 @@ export default function Index() {
                   />
                 </Animated.View>
               )}
+              */}
 
               <View style={dynamicStyles.contentVertical}>
                 {/* Title with fade + slide + scale animation */}

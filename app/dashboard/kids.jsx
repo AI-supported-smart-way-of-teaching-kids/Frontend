@@ -16,6 +16,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   Dimensions,
+  Modal,
 } from "react-native";
 import api from "../../src/api";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,7 +29,9 @@ import * as ImagePicker from "expo-image-picker";
 import PdfViewer from "../../components/PdfViewer";
 import i18n from "../../i18n";
 import { useLanguage } from "../../contexts/LanguageContext";
-const { height } = Dimensions.get("window");
+const { height, width } = Dimensions.get("window");
+const isTablet = width >= 768;
+const isSmallScreen = width < 375;
 const STORAGE = {
   VIDEOS: "@app_videos_v1",
   QUIZZES: "@app_quizzes_v1",
@@ -398,8 +401,11 @@ export default function Kids() {
   const [videos, setVideos] = useState([]);
   const [quizzes, setQuizzes] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadingChild, setLoadingChild] = useState(true);
   const [search, setSearch] = useState("");
   const [profile, setProfile] = useState(null);
+  // Selected child profile (loaded using child_id)
+  const [selectedChild, setSelectedChild] = useState(null);
   // Which top section is active on the page
   const [selectedSection, setSelectedSection] = useState("dashboard");
   // "dashboard" | "videos" | "quizzes" | "progress" | "recommended"
@@ -588,30 +594,35 @@ export default function Kids() {
     if (badge) showBadge(badge);
   };
 
-  // Save progress to student progress storage
+  // Save progress to student progress storage (using child_id)
   const saveStudentProgress = async () => {
     try {
-      const studentName = contextUser?.name || i18n.t('unknownStudent');
-      const studentId = contextUser?.id || Date.now().toString();
+      if (!selectedChild?.id) {
+        console.warn("No child selected, cannot save progress");
+        return;
+      }
+
+      const childId = selectedChild.id;
+      const childName = selectedChild.nickname || i18n.t('unknownStudent');
       
       const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
       const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
       
-      if (!studentProgress[studentId]) {
-        studentProgress[studentId] = {
-          name: studentName,
+      if (!studentProgress[childId]) {
+        studentProgress[childId] = {
+          name: childName,
           videosCompleted: [],
           videoWatchingDetails: [],
           quizResults: [],
         };
       }
 
-      studentProgress[studentId].videosCompleted = progress.videosCompleted;
-      studentProgress[studentId].name = studentName; // Update name in case it changed
+      studentProgress[childId].videosCompleted = progress.videosCompleted;
+      studentProgress[childId].name = childName; // Update name in case it changed
       
       // Preserve videoWatchingDetails if it exists
-      if (!studentProgress[studentId].videoWatchingDetails) {
-        studentProgress[studentId].videoWatchingDetails = [];
+      if (!studentProgress[childId].videoWatchingDetails) {
+        studentProgress[childId].videoWatchingDetails = [];
       }
       
       await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
@@ -674,10 +685,71 @@ export default function Kids() {
     }
   };
 
+  // Load selected child profile using child_id
+  const loadSelectedChild = async () => {
+    try {
+      // Give a small delay to ensure AsyncStorage write is complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const stored = await AsyncStorage.getItem("@selected_child");
+      if (stored) {
+        try {
+          const childData = JSON.parse(stored);
+          
+          // Validate child data has required fields
+          if (!childData || !childData.id) {
+            console.warn("Invalid child data in storage");
+            setLoadingChild(false);
+            // Don't redirect - just show error state
+            return;
+          }
+          
+          setSelectedChild(childData);
+          
+          // Use child_id to load child-specific progress
+          const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
+          const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
+          const childProgress = studentProgress[childData.id] || {
+            videosCompleted: [],
+            videoWatchingDetails: [],
+            quizResults: [],
+          };
+          
+          // Update progress state with child-specific data
+          setProgress({
+            videosCompleted: childProgress.videosCompleted || [],
+          });
+          
+          setLoadingChild(false); // Child profile loaded
+          console.log("Child profile loaded successfully:", childData.nickname);
+        } catch (parseError) {
+          console.warn("Failed to parse child data:", parseError);
+          setLoadingChild(false);
+          // Don't redirect - just show error state
+        }
+      } else {
+        // No child selected
+        console.warn("No child selected in storage");
+        setLoadingChild(false);
+        // Don't redirect - stay on kids dashboard and show message
+      }
+    } catch (e) {
+      console.warn("Failed to load selected child:", e);
+      setLoadingChild(false);
+      // Don't redirect - stay on kids dashboard and show error state
+    }
+  };
+
   // Load profile on mount
   useEffect(() => {
     loadProfile();
   }, []);
+
+  // Load selected child on mount (app switches to kid mode)
+  useEffect(() => {
+    loadSelectedChild();
+  }, []);
+
   // Load content
   useEffect(() => {
     (async () => {
@@ -803,18 +875,23 @@ export default function Kids() {
     });
   };
   
-  // Function to save video watching session
+  // Function to save video watching session (using child_id)
   const saveVideoWatchingSession = async (videoId, entryTime, durationMs) => {
     try {
-      const studentName = contextUser?.name || i18n.t('unknownStudent');
-      const studentId = contextUser?.id || Date.now().toString();
+      if (!selectedChild?.id) {
+        console.warn("No child selected, cannot save video session");
+        return;
+      }
+
+      const childId = selectedChild.id;
+      const childName = selectedChild.nickname || i18n.t('unknownStudent');
       
       const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
       const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
       
-      if (!studentProgress[studentId]) {
-        studentProgress[studentId] = {
-          name: studentName,
+      if (!studentProgress[childId]) {
+        studentProgress[childId] = {
+          name: childName,
           videosCompleted: [],
           videoWatchingDetails: [],
           quizResults: [],
@@ -822,12 +899,12 @@ export default function Kids() {
       }
       
       // Initialize videoWatchingDetails if it doesn't exist
-      if (!studentProgress[studentId].videoWatchingDetails) {
-        studentProgress[studentId].videoWatchingDetails = [];
+      if (!studentProgress[childId].videoWatchingDetails) {
+        studentProgress[childId].videoWatchingDetails = [];
       }
       
       // Find existing entry for this video
-      const existingEntry = studentProgress[studentId].videoWatchingDetails.find(
+      const existingEntry = studentProgress[childId].videoWatchingDetails.find(
         (entry) => entry.videoId === videoId
       );
       
@@ -840,7 +917,7 @@ export default function Kids() {
         }
       } else {
         // Create new entry
-        studentProgress[studentId].videoWatchingDetails.push({
+        studentProgress[childId].videoWatchingDetails.push({
           videoId,
           entryTime,
           totalDurationMs: durationMs,
@@ -887,38 +964,44 @@ export default function Kids() {
       if (answers[i] === q.answerIndex) correct++;
     });
     const score = Math.round((correct / quiz.questions.length) * 100);
-    const studentName = contextUser?.name || i18n.t('unknownStudent');
-    const studentId = contextUser?.id || Date.now().toString();
     
-    // Update quiz results with student info
+    if (!selectedChild?.id) {
+      Alert.alert(i18n.t('error'), "No child selected");
+      return;
+    }
+
+    const childId = selectedChild.id;
+    const childName = selectedChild.nickname || i18n.t('unknownStudent');
+    
+    // Update quiz results with child info
     const updated = { ...quizzes };
     const item = updated[quizId] || {};
     item.results = item.results || [];
     item.results.unshift({ 
       score, 
       date: new Date().toISOString(),
-      studentId,
-      studentName,
+      childId,  // Use childId instead of studentId
+      childName,  // Use childName instead of studentName
     });
     updated[quizId] = { ...quiz, ...item };
     
-    // Update student progress
+    // Update student progress (using child_id)
     try {
       const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
       const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
       
-      if (!studentProgress[studentId]) {
-        studentProgress[studentId] = {
-          name: studentName,
+      if (!studentProgress[childId]) {
+        studentProgress[childId] = {
+          name: childName,
           videosCompleted: [],
           quizResults: [],
         };
       }
       
-      // Add quiz result to student progress
-      const existingResult = studentProgress[studentId].quizResults.find(r => r.quizId === quizId);
+      // Add quiz result to child progress
+      const existingResult = studentProgress[childId].quizResults.find(r => r.quizId === quizId);
       if (!existingResult) {
-        studentProgress[studentId].quizResults.push({
+        studentProgress[childId].quizResults.push({
           quizId,
           quizTitle: quiz.title,
           score,
@@ -931,7 +1014,7 @@ export default function Kids() {
       }
       
       // Update videos completed
-      studentProgress[studentId].videosCompleted = progress.videosCompleted;
+      studentProgress[childId].videosCompleted = progress.videosCompleted;
       
       await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
       await AsyncStorage.setItem(STORAGE.QUIZZES, JSON.stringify(updated));
@@ -1030,8 +1113,17 @@ export default function Kids() {
 
   // Card component for dashboard grid
   const DashboardCard = ({ title, subtitle, emoji, onPress }) => (
-    <AnimatedPressable onPress={onPress} style={{ width: "48%" }}>
-      <View style={styles.dashboardCard}>
+    <AnimatedPressable onPress={onPress} style={{
+      width: isTablet ? "48%" : width < 400 ? "49%" : "48%",
+      flexShrink: 1,
+    }}>
+      <View style={[
+        styles.dashboardCard,
+        {
+          padding: isTablet ? 28 : isSmallScreen ? 12 : 16,
+          minHeight: isTablet ? 150 : isSmallScreen ? 110 : 120
+        }
+      ]}>
         <View
           style={{
             flexDirection: "row",
@@ -1040,11 +1132,19 @@ export default function Kids() {
           }}
         >
           <View>
-            <Text style={styles.dashboardCardTitle}>
+            <Text style={[
+              styles.dashboardCardTitle,
+              { fontSize: isTablet ? 24 : isSmallScreen ? 18 : 20 }
+            ]}>
               {emoji} {title}
             </Text>
             {subtitle ? (
-              <Text style={styles.dashboardCardSubtitle}>{subtitle}</Text>
+              <Text style={[
+                styles.dashboardCardSubtitle,
+                { fontSize: isTablet ? 17 : isSmallScreen ? 14 : 15 }
+              ]}>
+                {subtitle}
+              </Text>
             ) : null}
           </View>
           <Ionicons name="chevron-forward" size={22} color="#666" />
@@ -1052,12 +1152,32 @@ export default function Kids() {
       </View>
     </AnimatedPressable>
   );
-  // When loading
-  if (loading) {
+  // When loading content or child profile
+  if (loading || loadingChild) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color="#4c1d95" />
-        <Text style={{ marginTop: 10, color: "#444" }}>{i18n.t('loading')}</Text>
+        <Text style={{ marginTop: 10, color: "#000" }}>
+          {loadingChild ? "Loading child profile..." : i18n.t('loading')}
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  // If no child selected after loading, show message but stay on kids dashboard
+  if (!selectedChild) {
+    return (
+      <SafeAreaView style={[styles.container, styles.center]}>
+        <Ionicons name="person-outline" size={64} color="#999" />
+        <Text style={{ marginTop: 20, fontSize: 18, fontWeight: "600", color: "#000" }}>
+          No Child Selected
+        </Text>
+        <Text style={{ marginTop: 10, color: "#000", textAlign: "center", paddingHorizontal: 40 }}>
+          Please select a child from the parent dashboard to continue.
+        </Text>
+        <Text style={{ marginTop: 20, color: "#000", textAlign: "center", paddingHorizontal: 40, fontSize: 12 }}>
+          You can use the back button or logout to return to the parent dashboard.
+        </Text>
       </SafeAreaView>
     );
   }
@@ -1118,7 +1238,9 @@ export default function Kids() {
         {/* Center - Welcome Text */}
         <View style={{ flex: 1, alignItems: "center" }}>
           <Text style={styles.headerHi}>{i18n.t('hello')}</Text>
-          <Text style={styles.headerName}>{profile?.name || contextUser?.name || i18n.t('kid')}</Text>
+          <Text style={styles.headerName}>
+            {selectedChild?.nickname || profile?.name || contextUser?.name || i18n.t('kid')}
+          </Text>
         </View>
 
         {/* Language Switcher and Logout - Top Right */}
@@ -1134,7 +1256,7 @@ export default function Kids() {
             style={[styles.logoutBtn, { backgroundColor: "#f0f0f0" }]}
             accessibilityLabel={i18n.t('selectLanguage')}
           >
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#4c1d95" }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#000" }}>
               {language === "en" ? "🇬🇧 EN" : language === "ti" ? "🇪🇷 TI" : "🇪🇹 AM"}
             </Text>
           </TouchableOpacity>
@@ -1174,159 +1296,210 @@ export default function Kids() {
           </View>
         </View>
       )}
-      {/* If detail view is active (lesson/video/quiz), show detail full-screen inside same page */}
-      {detail ? (
-        <View style={{ flex: 1 }}>
-          <View style={{ padding: 12, borderBottomWidth: 1, borderColor: "#eee" }}>
-            <TouchableOpacity
-              style={{ flexDirection: "row", alignItems: "center" }}
-              onPress={async () => {
-                // Close detail: return to the section the user was in
-                // If closing a video, save the watching session
-                if (detail?.type === "video" && videoSessionStartTime.current && currentVideoId.current) {
-                  const durationMs = Date.now() - videoSessionStartTime.current;
-                  const entryTime = new Date(videoSessionStartTime.current).toISOString();
-                  
-                  // Clear timer
-                  if (videoSessionTimer.current) {
-                    clearInterval(videoSessionTimer.current);
-                    videoSessionTimer.current = null;
+      {/* Fullscreen Modal for detail view */}
+      <Modal
+        visible={!!detail}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={async () => {
+          if (detail?.type === "video" && videoSessionStartTime.current && currentVideoId.current) {
+            const durationMs = Date.now() - videoSessionStartTime.current;
+            const entryTime = new Date(videoSessionStartTime.current).toISOString();
+            
+            if (videoSessionTimer.current) {
+              clearInterval(videoSessionTimer.current);
+              videoSessionTimer.current = null;
+            }
+            
+            await saveVideoWatchingSession(currentVideoId.current, entryTime, durationMs);
+            videoSessionStartTime.current = null;
+            currentVideoId.current = null;
+          }
+          setDetail(null);
+        }}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: detail?.type === "video" ? "#000" : "#FFF5F7" }}>
+          <View style={{ flex: 1 }}>
+            {/* Header with close button */}
+            <View style={[styles.fullscreenHeader, { backgroundColor: detail?.type === "video" ? "rgba(0,0,0,0.8)" : "#FFFFFF" }]}>
+              <TouchableOpacity
+                style={styles.fullscreenCloseButton}
+                onPress={async () => {
+                  if (detail?.type === "video" && videoSessionStartTime.current && currentVideoId.current) {
+                    const durationMs = Date.now() - videoSessionStartTime.current;
+                    const entryTime = new Date(videoSessionStartTime.current).toISOString();
+                    
+                    if (videoSessionTimer.current) {
+                      clearInterval(videoSessionTimer.current);
+                      videoSessionTimer.current = null;
+                    }
+                    
+                    await saveVideoWatchingSession(currentVideoId.current, entryTime, durationMs);
+                    videoSessionStartTime.current = null;
+                    currentVideoId.current = null;
                   }
-                  
-                  // Save the session
-                  await saveVideoWatchingSession(currentVideoId.current, entryTime, durationMs);
-                  
-                  // Reset start time and video ID
-                  videoSessionStartTime.current = null;
-                  currentVideoId.current = null;
-                }
-                setDetail(null);
-              }}
-            >
-              <Ionicons name="arrow-back" size={22} color="#333" />
-              <Text style={{ marginLeft: 8, fontWeight: "800" }}>{i18n.t('back')}</Text>
-            </TouchableOpacity>
-          </View>
-          {detail.type === "video" && (
-            <VideoPlayerWithControls video={detail.item} videoRef={videoRef} />
-          )}
+                  setDetail(null);
+                }}
+              >
+                <Ionicons name="close" size={28} color={detail?.type === "video" ? "#fff" : "#000"} />
+              </TouchableOpacity>
+            </View>
 
+            {/* Content */}
+            {detail?.type === "video" && (
+              <VideoPlayerWithControls video={detail.item} videoRef={videoRef} />
+            )}
 
-          {detail.type === "quiz" && quizState && quizState.quizId === detail.item && (
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
-              style={{ flex: 1 }}
-            >
-              <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 36, flexGrow: 1 }}>
-                {quizzes[quizState.quizId] ? (
-                  quizzes[quizState.quizId].questions.map((q, idx) => (
-                    <View key={q.id || idx} style={{ marginBottom: 24, backgroundColor: "#fff", padding: 16, borderRadius: 12 }}>
-                      <Text style={styles.questionText}>{idx + 1}. {q.question}</Text>
-                      
-                      {/* Display question media based on type */}
-                      {q.type === "image" && q.imageUri && (
-                        <Image 
-                          source={{ uri: q.imageUri }} 
-                          style={{ width: "100%", height: 200, marginTop: 12, borderRadius: 8, resizeMode: "contain" }}
-                        />
-                      )}
-                      
-                      {q.type === "audio" && q.audioUri && (
-                        <View style={{ marginTop: 12, backgroundColor: "#f0f0f0", padding: 12, borderRadius: 8, flexDirection: "row", alignItems: "center" }}>
-                          <Ionicons name="musical-notes" size={24} color="#4c1d95" />
-                          <Text style={{ marginLeft: 8, color: "#666" }}>{i18n.t('audioQuestion')}</Text>
-                          <TouchableOpacity
-                            onPress={async () => {
-                              try {
-                                const { sound } = await Audio.Sound.createAsync({ uri: q.audioUri });
-                                await sound.playAsync();
-                                sound.setOnPlaybackStatusUpdate((status) => {
-                                  if (status.didJustFinish) {
-                                    sound.unloadAsync();
-                                  }
-                                });
-                              } catch (e) {
-                                Alert.alert(i18n.t('error'), i18n.t('couldNotPlayAudio'));
-                              }
-                            }}
-                            style={{ marginLeft: "auto", backgroundColor: "#4c1d95", padding: 8, borderRadius: 6 }}
-                          >
-                            <Ionicons name="play" size={20} color="#fff" />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                      
-                      {/* Display options */}
-                      {q.options.map((opt, i) => (
-                        <TouchableOpacity
-                          key={i}
-                          onPress={() => chooseOption(idx, i)}
-                          style={[
-                            styles.optionBtn,
-                            quizState.answers[idx] === i && styles.optionBtnSelected,
-                            { marginTop: 8 },
-                          ]}
-                        >
-                          {typeof opt === "object" && opt.type === "image" && opt.imageUri ? (
-                            <Image 
-                              source={{ uri: opt.imageUri }} 
-                              style={{ width: "100%", height: 120, borderRadius: 8, marginBottom: 8 }}
-                              resizeMode="cover"
-                            />
-                          ) : typeof opt === "object" && opt.type === "audio" && opt.audioUri ? (
-                            <View style={{ flexDirection: "row", alignItems: "center", padding: 8 }}>
-                              <Ionicons name="musical-notes" size={20} color={quizState.answers[idx] === i ? "#fff" : "#4c1d95"} />
-                              <Text style={{ marginLeft: 8, color: quizState.answers[idx] === i ? "#fff" : "#111" }}>Play Audio</Text>
-                              <TouchableOpacity
-                                onPress={async (e) => {
-                                  e.stopPropagation();
-                                  try {
-                                    const { sound } = await Audio.Sound.createAsync({ uri: opt.audioUri });
-                                    await sound.playAsync();
-                                    sound.setOnPlaybackStatusUpdate((status) => {
-                                      if (status.didJustFinish) {
-                                        sound.unloadAsync();
-                                      }
-                                    });
-                                  } catch (err) {
-                                    Alert.alert(i18n.t('error'), i18n.t('couldNotPlayAudio'));
-                                  }
-                                }}
-                                style={{ marginLeft: "auto" }}
-                              >
-                                <Ionicons name="play" size={18} color={quizState.answers[idx] === i ? "#fff" : "#4c1d95"} />
-                              </TouchableOpacity>
-                            </View>
-                          ) : (
-                            <Text
-                              style={[
-                                styles.optionText,
-                                quizState.answers[idx] === i && styles.optionTextSelected,
-                              ]}
-                            >
-                              {typeof opt === "string" ? opt : opt.text || `${i18n.t('option')} ${i + 1}`}
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ))
-                ) : (
-                  <View style={styles.emptyBox}>
-                    <Text style={styles.emptyText}>{i18n.t('quizNotFound')}</Text>
-                  </View>
-                )}
-                <TouchableOpacity
-                  onPress={() => (quizState ? submitQuiz(quizState.quizId, quizState.answers) : null)}
-                  style={[styles.primaryBtn, { marginBottom: 12 }]}
+            {detail?.type === "quiz" && quizState && quizState.quizId === detail.item && (
+              <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+              >
+                <ScrollView 
+                  contentContainerStyle={[
+                    styles.fullscreenQuizContainer,
+                    { paddingHorizontal: isSmallScreen ? 12 : isTablet ? 40 : 18 }
+                  ]}
                 >
-                  <Text style={styles.primaryBtnText}>{i18n.t('submitQuiz')}</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          )}
-        </View>
-      ) : (
+                  {quizzes[quizState.quizId] ? (
+                    quizzes[quizState.quizId].questions.map((q, idx) => (
+                      <View key={q.id || idx} style={[
+                        styles.fullscreenQuizQuestion,
+                        { 
+                          marginBottom: isTablet ? 32 : 24,
+                          padding: isTablet ? 24 : 16,
+                          maxWidth: isTablet ? 800 : "100%",
+                          alignSelf: "center",
+                          width: "100%"
+                        }
+                      ]}>
+                        <Text style={[styles.questionText, { fontSize: isTablet ? 24 : 20 }]}>
+                          {idx + 1}. {q.question}
+                        </Text>
+                        
+                        {q.type === "image" && q.imageUri && (
+                          <Image 
+                            source={{ uri: q.imageUri }} 
+                            style={{
+                              width: "100%",
+                              height: isTablet ? 300 : 200,
+                              marginTop: 12,
+                              borderRadius: 8,
+                              resizeMode: "contain"
+                            }}
+                          />
+                        )}
+                        
+                        {q.type === "audio" && q.audioUri && (
+                          <View style={{ marginTop: 12, backgroundColor: "#f0f0f0", padding: 12, borderRadius: 8, flexDirection: "row", alignItems: "center" }}>
+                            <Ionicons name="musical-notes" size={24} color="#4c1d95" />
+                            <Text style={{ marginLeft: 8, color: "#000" }}>{i18n.t('audioQuestion')}</Text>
+                            <TouchableOpacity
+                              onPress={async () => {
+                                try {
+                                  const { sound } = await Audio.Sound.createAsync({ uri: q.audioUri });
+                                  await sound.playAsync();
+                                  sound.setOnPlaybackStatusUpdate((status) => {
+                                    if (status.didJustFinish) {
+                                      sound.unloadAsync();
+                                    }
+                                  });
+                                } catch (e) {
+                                  Alert.alert(i18n.t('error'), i18n.t('couldNotPlayAudio'));
+                                }
+                              }}
+                              style={{ marginLeft: "auto", backgroundColor: "#4c1d95", padding: 8, borderRadius: 6 }}
+                            >
+                              <Ionicons name="play" size={20} color="#fff" />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        
+                        {q.options.map((opt, i) => (
+                          <TouchableOpacity
+                            key={i}
+                            onPress={() => chooseOption(idx, i)}
+                            style={[
+                              styles.optionBtn,
+                              quizState.answers[idx] === i && styles.optionBtnSelected,
+                              { marginTop: 8, padding: isTablet ? 20 : 16 },
+                            ]}
+                          >
+                            {typeof opt === "object" && opt.type === "image" && opt.imageUri ? (
+                              <Image 
+                                source={{ uri: opt.imageUri }} 
+                                style={{
+                                  width: "100%",
+                                  height: isTablet ? 160 : 120,
+                                  borderRadius: 8,
+                                  marginBottom: 8
+                                }}
+                                resizeMode="cover"
+                              />
+                            ) : typeof opt === "object" && opt.type === "audio" && opt.audioUri ? (
+                              <View style={{ flexDirection: "row", alignItems: "center", padding: 8 }}>
+                                <Ionicons name="musical-notes" size={20} color={quizState.answers[idx] === i ? "#fff" : "#4c1d95"} />
+                                <Text style={{ marginLeft: 8, color: quizState.answers[idx] === i ? "#fff" : "#000" }}>Play Audio</Text>
+                                <TouchableOpacity
+                                  onPress={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const { sound } = await Audio.Sound.createAsync({ uri: opt.audioUri });
+                                      await sound.playAsync();
+                                      sound.setOnPlaybackStatusUpdate((status) => {
+                                        if (status.didJustFinish) {
+                                          sound.unloadAsync();
+                                        }
+                                      });
+                                    } catch (err) {
+                                      Alert.alert(i18n.t('error'), i18n.t('couldNotPlayAudio'));
+                                    }
+                                  }}
+                                  style={{ marginLeft: "auto" }}
+                                >
+                                  <Ionicons name="play" size={18} color={quizState.answers[idx] === i ? "#fff" : "#4c1d95"} />
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <Text
+                                style={[
+                                  styles.optionText,
+                                  quizState.answers[idx] === i && styles.optionTextSelected,
+                                  { fontSize: isTablet ? 18 : 16 }
+                                ]}
+                              >
+                                {typeof opt === "string" ? opt : opt.text || `${i18n.t('option')} ${i + 1}`}
+                              </Text>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ))
+                  ) : (
+                    <View style={styles.emptyBox}>
+                      <Text style={styles.emptyText}>{i18n.t('quizNotFound')}</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    onPress={() => (quizState ? submitQuiz(quizState.quizId, quizState.answers) : null)}
+                    style={[
+                      styles.primaryBtn,
+                      { marginBottom: 12, padding: isTablet ? 22 : 18 }
+                    ]}
+                  >
+                    <Text style={[styles.primaryBtnText, { fontSize: isTablet ? 20 : 18 }]}>
+                      {i18n.t('submitQuiz')}
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Main Content - only show when detail is not active */}
+      {!detail && (
         // MAIN CONTENT: Dashboard OR selected section (lists/progress)
         <>
           {selectedSection === "dashboard" && (
@@ -1454,7 +1627,7 @@ export default function Kids() {
 
               <View style={styles.card}>
                 <Text style={styles.smallTitle}>Videos Watched</Text>
-                <Text style={{ marginTop: 6 }}>
+                <Text style={{ marginTop: 6, color: "#000" }}>
                   {progress.videosCompleted.length} / {videos.length}
                 </Text>
                 <ProgressBar
@@ -1467,7 +1640,7 @@ export default function Kids() {
               </View>
               <View style={styles.card}>
                 <Text style={styles.smallTitle}>Quizzes Completed</Text>
-                <Text style={{ marginTop: 6 }}>
+                <Text style={{ marginTop: 6, color: "#000" }}>
                   {Object.values(quizzes).filter((q) => q.results?.length > 0).length} /{" "}
                   {Object.keys(quizzes).length}
                 </Text>
@@ -1484,12 +1657,12 @@ export default function Kids() {
                     <Text style={styles.cardTitle}>{quiz.title}</Text>
                     {quiz.results?.length > 0 ? (
                       quiz.results.map((r, idx) => (
-                        <Text key={idx} style={{ marginTop: 6 }}>
+                        <Text key={idx} style={{ marginTop: 6, color: "#000" }}>
                           {new Date(r.date).toLocaleDateString()} - Score: {r.score}%
                         </Text>
                       ))
                     ) : (
-                      <Text style={{ marginTop: 6, fontStyle: "italic" }}>Not attempted yet</Text>
+                      <Text style={{ marginTop: 6, fontStyle: "italic", color: "#000" }}>Not attempted yet</Text>
                     )}
                   </View>
                 ))}
@@ -1537,8 +1710,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  headerHi: { color: "#FF6B9D", fontWeight: "700", fontSize: 14 },
-  headerName: { fontSize: 20, fontWeight: "900", color: "#FF1493" },
+  headerHi: { color: "#000", fontWeight: "700", fontSize: 14 },
+  headerName: { fontSize: 20, fontWeight: "900", color: "#000" },
   logoutBtn: { 
     padding: 8, 
     borderRadius: 8,
@@ -1558,8 +1731,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFE5F1",
   },
-  welcomeTitle: { fontSize: 20, fontWeight: "900", color: "#FF1493" },
-  welcomeSubtitle: { marginTop: 8, color: "#FF6B9D", fontSize: 15, fontWeight: "600" },
+  welcomeTitle: { fontSize: 20, fontWeight: "900", color: "#000" },
+  welcomeSubtitle: { marginTop: 8, color: "#000", fontSize: 15, fontWeight: "600" },
   searchRow: { paddingHorizontal: 12, marginTop: 12 },
   searchBox: {
     flexDirection: "row",
@@ -1586,6 +1759,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     width: "100%",
     marginBottom: 12,
+    gap: 12,
+    flexWrap: "nowrap",
   },
   dashboardCard: {
     backgroundColor: "#FFFFFF",
@@ -1599,13 +1774,15 @@ const styles = StyleSheet.create({
     elevation: 5,
     minHeight: 120,
     justifyContent: "center",
+    flex: 1,
+    minWidth: 0,
   },
-  dashboardCardTitle: { fontSize: 20, fontWeight: "900", color: "#FF1493" },
-  dashboardCardSubtitle: { marginTop: 8, color: "#FF6B9D", fontSize: 15, fontWeight: "700" },
+  dashboardCardTitle: { fontSize: 20, fontWeight: "900", color: "#000" },
+  dashboardCardSubtitle: { marginTop: 8, color: "#000", fontSize: 15, fontWeight: "700" },
   // item cards (list inside sections)
   itemCard: {
     backgroundColor: "#FFFFFF",
-    padding: 18,
+    padding: isTablet ? 24 : isSmallScreen ? 14 : 18,
     marginTop: 12,
     borderRadius: 20,
     borderWidth: 3,
@@ -1616,10 +1793,11 @@ const styles = StyleSheet.create({
     elevation: 4,
     width: "100%",
     alignSelf: "center",
+    maxWidth: isTablet ? 800 : "100%",
   },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardTitle: { fontWeight: "900", fontSize: 18, color: "#FF1493", flexShrink: 1 },
-  cardDesc: { marginTop: 10, color: "#FF6B9D", fontSize: 15, fontWeight: "600" },
+  cardTitle: { fontWeight: "900", fontSize: 18, color: "#000", flexShrink: 1 },
+  cardDesc: { marginTop: 10, color: "#000", fontSize: 15, fontWeight: "600" },
   cardBadge: {
     backgroundColor: "#FFE5F1",
     paddingHorizontal: 12,
@@ -1629,17 +1807,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFB6C1",
   },
-  cardBadgeText: { color: "#FF1493", fontWeight: "800", fontSize: 13 },
-  sectionTitle: { fontSize: 20, fontWeight: "900", marginTop: 4, color: "#111" },
-  smallTitle: { fontSize: 18, fontWeight: "900", color: "#FF1493" },
+  cardBadgeText: { color: "#000", fontWeight: "800", fontSize: 13 },
+  sectionTitle: { fontSize: 20, fontWeight: "900", marginTop: 4, color: "#000" },
+  smallTitle: { fontSize: 18, fontWeight: "900", color: "#000" },
   emptyBox: {
     marginTop: 18,
     padding: 18,
     alignItems: "center",
     justifyContent: "center",
   },
-  emptyText: { marginTop: 8, color: "#777", fontSize: 15, fontWeight: "600" },
-  emptySub: { marginTop: 6, color: "#999", fontSize: 13 },
+  emptyText: { marginTop: 8, color: "#000", fontSize: 15, fontWeight: "600" },
+  emptySub: { marginTop: 6, color: "#000", fontSize: 13 },
   emptyEmoji: { fontSize: 36 },
 
   // Progress
@@ -1661,7 +1839,7 @@ const styles = StyleSheet.create({
 
   // Lesson / general
   lessonTitle: { fontSize: 22, fontWeight: "900" },
-  lessonDesc: { marginTop: 10, fontSize: 16, lineHeight: 22, color: "#444" },
+  lessonDesc: { marginTop: 10, fontSize: 16, lineHeight: 22, color: "#000" },
   primaryBtn: {
     padding: 18,
     backgroundColor: "#FF6B9D",
@@ -1678,7 +1856,7 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: "#fff", fontWeight: "900", fontSize: 18 }, 
   // Quiz
-  questionText: { fontWeight: "900", fontSize: 20, marginBottom: 12, color: "#FF1493" },
+  questionText: { fontWeight: "900", fontSize: 20, marginBottom: 12, color: "#000" },
   optionBtn: {
     padding: 16,
     marginTop: 10,
@@ -1688,7 +1866,7 @@ const styles = StyleSheet.create({
     borderColor: "#FFB6C1",
   },
   optionBtnSelected: { backgroundColor: "#FF6B9D", borderColor: "#FF1493" },
-  optionText: { color: "#111", fontSize: 16, fontWeight: "700" },
+  optionText: { color: "#000", fontSize: 16, fontWeight: "700" },
   optionTextSelected: { color: "#fff", fontWeight: "900", fontSize: 17 },
 
   // small card style used in some places
@@ -1809,7 +1987,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: "900",
-    color: "#111",
+    color: "#000",
     marginLeft: 8,
   },
   seeAllText: {
@@ -1888,18 +2066,18 @@ const styles = StyleSheet.create({
   recommendedCardTitle: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#111",
+    color: "#000",
     marginBottom: 4,
     lineHeight: 18,
   },
   recommendedCardDesc: {
     fontSize: 12,
-    color: "#666",
+    color: "#000",
     lineHeight: 16,
   },
   sectionSubtitle: {
     fontSize: 13,
-    color: "#666",
+    color: "#000",
     marginBottom: 16,
     paddingHorizontal: 4,
   },
@@ -1942,5 +2120,31 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 15,
     marginLeft: 8,
+  },
+  // Fullscreen Modal Styles
+  fullscreenHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 1000,
+  },
+  fullscreenCloseButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullscreenQuizContainer: {
+    paddingTop: 20,
+    paddingBottom: 40,
+    flexGrow: 1,
+  },
+  fullscreenQuizQuestion: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
   },
 });

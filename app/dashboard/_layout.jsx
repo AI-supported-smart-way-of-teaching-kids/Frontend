@@ -9,8 +9,8 @@ export default function DashboardLayout() {
       }}
     >
       <Stack.Screen name="kids" />
+      <Stack.Screen name="parent" />
       <Stack.Screen name="teacher" />
-      {/* Add parent dashboard if needed */}
     </Stack>
   );
 }

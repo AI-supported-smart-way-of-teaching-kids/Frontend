@@ -18,7 +18,7 @@ export default function DrawerLayout(props) {
         </View>
       )}
       screenOptions={({ route }) => ({
-        headerShown: !["dashboard/kids", "dashboard/teacher"].includes(route.name),
+        headerShown: !["dashboard/kids", "dashboard/parent", "dashboard/teacher"].includes(route.name),
         
         // --- THIS SECTION HIDES THE TOP TEXT ---
         headerTitle: "",           // Hides text from the top bar
