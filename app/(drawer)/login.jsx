@@ -223,23 +223,6 @@ export default function LoginPage() {
     teacher: "/dashboard/teacher",
   };
 
-  const STORAGE = {
-    TEACHER_PROFILES: "@app_teacher_profiles_v1",
-  };
-
-  // Helper function to check if teacher has profile
-  const checkTeacherProfile = async (userId) => {
-    try {
-      const storedProfiles = await AsyncStorage.getItem(STORAGE.TEACHER_PROFILES);
-      if (!storedProfiles) return false;
-      const profiles = JSON.parse(storedProfiles);
-      return profiles[userId] ? true : false;
-    } catch (e) {
-      console.warn("Error checking teacher profile:", e);
-      return false;
-    }
-  };
-
   // Reset fields when switching roles
   useEffect(() => {
     setEmail("");
@@ -285,18 +268,8 @@ export default function LoginPage() {
         await AsyncStorage.setItem("role", role);
         await AsyncStorage.setItem("user", JSON.stringify(safeUser));
         setLoading(false);
-        setTimeout(async () => {
-          // Check if teacher has profile, redirect to setup if not
-          if (role === "teacher") {
-            const hasProfile = await checkTeacherProfile(safeUser.id);
-            if (!hasProfile) {
-              router.replace("/teacher-profile-setup");
-            } else {
-              router.replace(roleRouteMap[role]);
-            }
-          } else {
-            router.replace(roleRouteMap[role]);
-          }
+        setTimeout(() => {
+          router.replace(roleRouteMap[role]);
         }, 100);
       } else {
         setError(t("invalidCredentials"));
@@ -361,34 +334,8 @@ export default function LoginPage() {
       await AsyncStorage.setItem("role", role);
       await AsyncStorage.setItem("user", JSON.stringify(userWithoutPassword));
       setLoading(false);
-      // Use setTimeout to ensure state updates before navigation
-      setTimeout(async () => {
-        try {
-          // Check if teacher has profile, redirect to setup if not
-          if (role === "teacher") {
-            const hasProfile = await checkTeacherProfile(userWithoutPassword.id);
-            if (!hasProfile) {
-              router.replace("/teacher-profile-setup");
-            } else {
-              router.replace(roleRouteMap[role]);
-            }
-          } else {
-            router.replace(roleRouteMap[role]);
-          }
-        } catch (navError) {
-          console.error("Navigation error:", navError);
-          // Fallback: try push instead
-          if (role === "teacher") {
-            const hasProfile = await checkTeacherProfile(userWithoutPassword.id);
-            if (!hasProfile) {
-              router.push("/teacher-profile-setup");
-            } else {
-              router.push(roleRouteMap[role]);
-            }
-          } else {
-            router.push(roleRouteMap[role]);
-          }
-        }
+      setTimeout(() => {
+        router.replace(roleRouteMap[role]);
       }, 100);
     } catch (error) {
       console.error("Signup error:", error);

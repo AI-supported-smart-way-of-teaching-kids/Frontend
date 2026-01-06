@@ -35,6 +35,7 @@ const isSmallScreen = width < 375;
 const STORAGE = {
   VIDEOS: "@app_videos_v1",
   QUIZZES: "@app_quizzes_v1",
+  COLLECTIONS: "@app_collections_v1",
   PROFILE: "@app_profile_v1",
   STUDENT_PROGRESS: "@app_student_progress_v1",
   PHOTO: "@app_photo_v1",
@@ -79,10 +80,11 @@ const ProgressBar = ({ progress }) => {
 };
 
 // Video Player Component with Controls for Individual Video View
-const VideoPlayerWithControls = ({ video, videoRef }) => {
+const VideoPlayerWithControls = ({ video, videoRef, collections }) => {
   const [showControls, setShowControls] = useState(false);
   const [status, setStatus] = useState({});
   const controlsTimeout = useRef(null);
+  const collection = video.collection ? collections?.[video.collection] : null;
 
   useEffect(() => {
     if (showControls) {
@@ -132,7 +134,7 @@ const VideoPlayerWithControls = ({ video, videoRef }) => {
         onPress={() => setShowControls(!showControls)}
       >
         <Video
-          source={{ uri: video.uri }}
+          source={{ uri: video.uri || video.video_url }}
           ref={videoRef}
           style={{ flex: 1 }}
           useNativeControls={false}
@@ -201,6 +203,14 @@ const VideoPlayerWithControls = ({ video, videoRef }) => {
       )}
 
       <View style={{ padding: 12, position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.6)" }}>
+        {collection && (
+          <View style={{ marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+            <Ionicons name="folder" size={14} color="#16A34A" />
+            <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: "700", color: "#16A34A" }}>
+              📦 {collection.title}
+            </Text>
+          </View>
+        )}
         <Text style={{ fontWeight: "800", fontSize: 18, color: "#fff" }}>
           {video.title}
         </Text>
@@ -213,11 +223,12 @@ const VideoPlayerWithControls = ({ video, videoRef }) => {
 };
 
 // Video Item Component for TikTok Feed
-const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate }) => {
+const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate, collections }) => {
   const videoRef = useRef(null);
   const [showControls, setShowControls] = useState(false);
   const [status, setStatus] = useState({});
   const controlsTimeout = useRef(null);
+  const collection = item.collection ? collections?.[item.collection] : null;
 
   useEffect(() => {
     onVideoRef(index, videoRef.current);
@@ -275,7 +286,7 @@ const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate
       >
         <Video
           ref={videoRef}
-          source={{ uri: item.uri }}
+          source={{ uri: item.uri || item.video_url }}
           style={{ width: "100%", height: "100%" }}
           useNativeControls={false}
           resizeMode="cover"
@@ -349,6 +360,14 @@ const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
       }}>
+        {collection && (
+          <View style={{ marginBottom: 8, flexDirection: "row", alignItems: "center" }}>
+            <Ionicons name="folder" size={14} color="#16A34A" />
+            <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: "700", color: "#16A34A" }}>
+              📦 {collection.title}
+            </Text>
+          </View>
+        )}
         <Text style={{ fontWeight: "800", fontSize: 20, color: "#fff", marginBottom: 4 }}>
           {item.title}
         </Text>
@@ -375,7 +394,7 @@ const FullScreenVideo = ({ video, onWatched }) => {
     <View style={styles.videoPage}>
       <Video
         ref={videoRef}
-        source={{ uri: video.uri }}
+        source={{ uri: video.uri || video.video_url }}
         style={styles.fullVideo}
         useNativeControls
         resizeMode="contain"
@@ -398,8 +417,10 @@ export default function Kids() {
   const { user: contextUser, logout } = useUser();
   const { language, changeLanguage } = useLanguage();
   const router = useRouter();
+  const user = contextUser; // Get parent user for updating children list
   const [videos, setVideos] = useState([]);
   const [quizzes, setQuizzes] = useState({});
+  const [collections, setCollections] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadingChild, setLoadingChild] = useState(true);
   const [search, setSearch] = useState("");
@@ -408,6 +429,8 @@ export default function Kids() {
   const [selectedChild, setSelectedChild] = useState(null);
   // Which top section is active on the page
   const [selectedSection, setSelectedSection] = useState("dashboard");
+  // Collection selection for lessons view
+  const [selectedCollectionId, setSelectedCollectionId] = useState(null);
   // "dashboard" | "videos" | "quizzes" | "progress" | "recommended"
   // Inline detail view state (replaces modals)
   // { type: 'video'|'quiz', item: object | id } or null
@@ -467,7 +490,7 @@ export default function Kids() {
   };
 
   // TikTokVideoList component for video feed mode with fullscreen support
-  const TikTokVideoList = () => {
+  const TikTokVideoList = ({ collections }) => {
     const videoRefs = useRef({});
     const [playingIndex, setPlayingIndex] = useState(0);
     const [videoStatuses, setVideoStatuses] = useState({});
@@ -550,6 +573,7 @@ export default function Kids() {
               playingIndex={playingIndex}
               onVideoRef={handleVideoRef}
               onStatusUpdate={updateVideoStatus}
+              collections={collections}
             />
           )}
           pagingEnabled
@@ -754,12 +778,14 @@ export default function Kids() {
   useEffect(() => {
     (async () => {
       try {
-        const [rawVideos, rawQuizzes] = await Promise.all([
+        const [rawVideos, rawQuizzes, rawCollections] = await Promise.all([
           AsyncStorage.getItem(STORAGE.VIDEOS),
           AsyncStorage.getItem(STORAGE.QUIZZES),
+          AsyncStorage.getItem(STORAGE.COLLECTIONS),
         ]);
         setVideos(rawVideos ? JSON.parse(rawVideos) : []);
         setQuizzes(rawQuizzes ? JSON.parse(rawQuizzes) : {});
+        setCollections(rawCollections ? JSON.parse(rawCollections) : {});
       } catch (e) {
         console.warn("Failed to load stored content", e);
       } finally {
@@ -767,6 +793,40 @@ export default function Kids() {
       }
     })();
   }, []);
+
+  // Compute selected collection
+  const selectedCollection = selectedCollectionId ? collections[selectedCollectionId] : null;
+
+  // Render collection card
+  const renderCollectionCard = (collection) => {
+    return (
+      <AnimatedPressable
+        key={collection.id}
+        style={{ marginTop: 12 }}
+        onPress={() => {
+          // Collections are kept but don't navigate to lessons anymore
+        }}
+      >
+        <View style={styles.itemCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>
+              📦 {collection.title}
+            </Text>
+            <View style={styles.cardBadge}>
+              <Text style={styles.cardBadgeText}>
+                Collection
+              </Text>
+            </View>
+          </View>
+          {collection.description ? (
+            <Text style={styles.cardDesc} numberOfLines={2}>
+              {collection.description}
+            </Text>
+          ) : null}
+        </View>
+      </AnimatedPressable>
+    );
+  };
   // Logout
   const handleLogout = async () => {
     try {
@@ -778,9 +838,14 @@ export default function Kids() {
       router.replace("/login");
     }
   };
-  // Pick profile photo directly from dashboard - updates only photo, preserves other profile data
+  // Pick profile photo directly from dashboard - updates child's avatar in parent's children list
   const pickProfilePhoto = async () => {
     try {
+      if (!selectedChild || !selectedChild.id) {
+        Alert.alert(i18n.t('error'), "No child selected");
+        return;
+      }
+
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
         Alert.alert(i18n.t('permissionRequired'), i18n.t('allowGalleryAccess'));
@@ -795,24 +860,36 @@ export default function Kids() {
       if (!result.canceled) {
         const uri = result.assets[0].uri;
         
-        // Load existing profile to preserve other information
-        const stored = await AsyncStorage.getItem(STORAGE.PROFILE);
-        let profileData = stored ? JSON.parse(stored) : {};
-        
-        // Update only the photo, keep all other data intact
-        const updatedProfile = {
-          ...profileData,
-          photo: uri,
+        // Update the selected child's avatar
+        const updatedChild = {
+          ...selectedChild,
+          avatarUrl: uri,
         };
         
-        // Save updated profile
-        await AsyncStorage.setItem(STORAGE.PROFILE, JSON.stringify(updatedProfile));
+        // Update in parent's children list (STORAGE.CHILDREN)
+        try {
+          if (user?.id) {
+            const stored = await AsyncStorage.getItem("@app_children_v1");
+            let allChildren = stored ? JSON.parse(stored) : {};
+            const parentChildren = allChildren[user.id] || [];
+            
+            // Update the child in the parent's children list
+            const updatedChildren = parentChildren.map((child) =>
+              child.id === selectedChild.id ? updatedChild : child
+            );
+            
+            allChildren[user.id] = updatedChildren;
+            await AsyncStorage.setItem("@app_children_v1", JSON.stringify(allChildren));
+          }
+        } catch (updateError) {
+          console.warn("Failed to update child in parent's list:", updateError);
+        }
+        
+        // Update the selected_child storage
+        await AsyncStorage.setItem("@selected_child", JSON.stringify(updatedChild));
         
         // Update local state
-        setProfile(updatedProfile);
-        
-        // Reload profile to ensure UI updates
-        await loadProfile();
+        setSelectedChild(updatedChild);
         
         Alert.alert(i18n.t('success'), i18n.t('profilePictureUpdated'));
       }
@@ -1028,39 +1105,51 @@ export default function Kids() {
   };
 
   // Render item card: opens inline detail now
-  const renderCard = (item, type) => (
-    <AnimatedPressable
-      key={item.id}
-      style={{ marginTop: 12 }}
-      onPress={() => {
-        if (type === "videos") openVideoInline(item);
-        if (type === "quizzes") openQuizInline(item.id);
-      }}
-    >
-      <View style={styles.itemCard}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>
-            {type === "videos" ? "🎬 " : "❓ "}
-            {item.title}
-          </Text>
-          <View style={styles.cardBadge}>
-            <Text style={styles.cardBadgeText}>
-              {type}
+  const renderCard = (item, type) => {
+    const collection = item.collection ? collections[item.collection] : null;
+    return (
+      <AnimatedPressable
+        key={item.id}
+        style={{ marginTop: 12 }}
+        onPress={() => {
+          if (type === "videos") openVideoInline(item);
+          if (type === "quizzes") openQuizInline(item.id);
+        }}
+      >
+        <View style={styles.itemCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>
+              {type === "videos" ? "🎬 " : "❓ "}
+              {item.title}
             </Text>
+            <View style={styles.cardBadge}>
+              <Text style={styles.cardBadgeText}>
+                {type}
+              </Text>
+            </View>
           </View>
+          {item.description ? (
+            <Text style={styles.cardDesc} numberOfLines={2}>
+              {item.description}
+            </Text>
+          ) : null}
+          {collection && (
+            <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center", padding: 8, backgroundColor: "#F0FDF4", borderRadius: 8 }}>
+              <Ionicons name="folder" size={16} color="#16A34A" />
+              <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: "600", color: "#16A34A" }}>
+                📦 {collection.title}
+              </Text>
+            </View>
+          )}
         </View>
-        {item.description ? (
-          <Text style={styles.cardDesc} numberOfLines={2}>
-            {item.description}
-          </Text>
-        ) : null}
-      </View>
-    </AnimatedPressable>
-  );
+      </AnimatedPressable>
+    );
+  };
 
   // Render recommended video card with thumbnail
   const renderRecommendedVideoCard = (video) => {
     const isWatched = progress.videosCompleted.includes(video.id);
+    const collection = video.collection ? collections[video.collection] : null;
     
     return (
       <AnimatedPressable
@@ -1093,6 +1182,15 @@ export default function Kids() {
                 <Ionicons name="checkmark-circle" size={16} color="#4c1d95" />
               </View>
             )}
+            {/* Collection badge */}
+            {collection && (
+              <View style={{ position: "absolute", top: 8, left: 8, backgroundColor: "rgba(22, 163, 74, 0.9)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="folder" size={12} color="#fff" />
+                <Text style={{ marginLeft: 4, fontSize: 10, fontWeight: "700", color: "#fff" }}>
+                  {collection.title}
+                </Text>
+              </View>
+            )}
           </View>
           
           {/* Video Info */}
@@ -1104,6 +1202,14 @@ export default function Kids() {
               <Text style={styles.recommendedCardDesc} numberOfLines={2}>
                 {video.description}
               </Text>
+            )}
+            {collection && (
+              <View style={{ marginTop: 6, flexDirection: "row", alignItems: "center" }}>
+                <Ionicons name="folder" size={14} color="#16A34A" />
+                <Text style={{ marginLeft: 4, fontSize: 11, fontWeight: "600", color: "#16A34A" }}>
+                  {collection.title}
+                </Text>
+              </View>
             )}
           </View>
         </View>
@@ -1186,7 +1292,7 @@ export default function Kids() {
   if (videoFeedMode) {
     return (
       <View style={{ flex: 1, backgroundColor: "#000" }}>
-        <TikTokVideoList />
+        <TikTokVideoList collections={collections} />
       </View>
     );
   }
@@ -1225,9 +1331,10 @@ export default function Kids() {
           onPress={pickProfilePhoto}
           accessibilityLabel={i18n.t('changeProfilePicture')}
           style={styles.profileIconContainer}
+          activeOpacity={0.8}
         >
-          {profile?.photo && profile.photo.trim() !== "" ? (
-            <Image source={{ uri: profile.photo }} style={styles.profilePhoto} />
+          {selectedChild?.avatarUrl && selectedChild.avatarUrl.trim() !== "" ? (
+            <Image source={{ uri: selectedChild.avatarUrl }} style={styles.profilePhoto} />
           ) : (
             <View style={styles.profilePhotoPlaceholder}>
               <Ionicons name="person" size={24} color="#fff" />
@@ -1235,13 +1342,8 @@ export default function Kids() {
           )}
         </TouchableOpacity>
 
-        {/* Center - Welcome Text */}
-        <View style={{ flex: 1, alignItems: "center" }}>
-          <Text style={styles.headerHi}>{i18n.t('hello')}</Text>
-          <Text style={styles.headerName}>
-            {selectedChild?.nickname || profile?.name || contextUser?.name || i18n.t('kid')}
-          </Text>
-        </View>
+        {/* Empty space in center */}
+        <View style={{ flex: 1 }} />
 
         {/* Language Switcher and Logout - Top Right */}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -1256,9 +1358,7 @@ export default function Kids() {
             style={[styles.logoutBtn, { backgroundColor: "#f0f0f0" }]}
             accessibilityLabel={i18n.t('selectLanguage')}
           >
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#000" }}>
-              {language === "en" ? "🇬🇧 EN" : language === "ti" ? "🇪🇷 TI" : "🇪🇹 AM"}
-            </Text>
+            <Ionicons name="language" size={20} color="#000" />
           </TouchableOpacity>
           
           {/* Logout Button */}
@@ -1270,11 +1370,6 @@ export default function Kids() {
             <Ionicons name="log-out-outline" size={22} color="#333" />
           </TouchableOpacity>
         </View>
-      </View>
-      {/* Welcome */}
-      <View style={styles.welcomeBox}>
-        <Text style={styles.welcomeTitle}>{i18n.t('readyToExplore')}</Text>
-        <Text style={styles.welcomeSubtitle}>{i18n.t('tapCardToOpen')}</Text>
       </View>
       {/* Search Row (visible in dashboard/videos/quizzes) */}
       {showSearch && (
@@ -1347,7 +1442,7 @@ export default function Kids() {
 
             {/* Content */}
             {detail?.type === "video" && (
-              <VideoPlayerWithControls video={detail.item} videoRef={videoRef} />
+              <VideoPlayerWithControls video={detail.item} videoRef={videoRef} collections={collections} />
             )}
 
             {detail?.type === "quiz" && quizState && quizState.quizId === detail.item && (
@@ -1521,11 +1616,22 @@ export default function Kids() {
               </View>
               <View style={styles.gridRow}>
                 <DashboardCard
+                  title="Collections"
+                  subtitle={`${Object.keys(collections).length} ${i18n.t('available')}`}
+                  emoji="📦"
+                  onPress={() => {
+                    setSelectedCollectionId(null);
+                    setSelectedSection("collections");
+                  }}
+                />
+                <DashboardCard
                   title="Quizzes"
                   subtitle={`${Object.keys(quizzes).length} ${i18n.t('available')}`}
                   emoji="❓"
                   onPress={() => setSelectedSection("quizzes")}
                 />
+              </View>
+              <View style={styles.gridRow}>
                 <DashboardCard
                   title={i18n.t('progress')}
                   subtitle="View progress"
@@ -1568,31 +1674,34 @@ export default function Kids() {
             </ScrollView>
           )}
 
-          {selectedSection === "videos" && (
+          {/* COLLECTIONS SECTION */}
+          {selectedSection === "collections" && (
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <TouchableOpacity onPress={() => setSelectedSection("dashboard")}>
                   <Ionicons name="arrow-back" size={24} color="#333" />
                 </TouchableOpacity>
-                {videos.length > 0 && (
-                  <TouchableOpacity
-                    onPress={() => setVideoFeedMode(true)}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      backgroundColor: "#4c1d95",
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      borderRadius: 20,
-                    }}
-                  >
-                    <Ionicons name="play" size={18} color="#fff" />
-                    <Text style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>
-                      Watch All ({videos.length})
-                    </Text>
-                  </TouchableOpacity>
-                )}
               </View>
+              <Text style={{ fontSize: 20, fontWeight: "900", marginBottom: 16 }}>Collections</Text>
+              {Object.keys(collections).length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="folder-outline" size={48} color="#999" />
+                  <Text style={styles.emptyText}>No collections available</Text>
+                </View>
+              ) : (
+                Object.values(collections)
+                  .filter(c => !search || c.title.toLowerCase().includes(search.toLowerCase()) || (c.description && c.description.toLowerCase().includes(search.toLowerCase())))
+                  .map((collection) => renderCollectionCard(collection))
+              )}
+            </ScrollView>
+          )}
+
+          {/* VIDEOS LIST INLINE */}
+          {selectedSection === "videos" && (
+            <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
+              <TouchableOpacity onPress={() => setSelectedSection("dashboard")} style={{ marginBottom: 10 }}>
+                <Ionicons name="arrow-back" size={24} color="#333" />
+              </TouchableOpacity>
               {results.videos.length === 0 ? (
                 <View style={styles.emptyBox}>
                   <Text style={styles.emptyText}>No videos found</Text>

@@ -27,7 +27,9 @@ import { useUser } from "../../contexts/UserContext";
 
 const STORAGE = {
   CHILDREN: "@app_children_v1", // { parentId: [child1, child2, ...] }
-  CHILD_PROGRESS: "@app_child_progress_v1", // { childId: { lessonsCompleted, videosCompleted, quizResults } }
+  STUDENT_PROGRESS: "@app_student_progress_v1", // { childId: { videosCompleted, videoWatchingDetails, quizResults } }
+  VIDEOS: "@app_videos_v1",
+  QUIZZES: "@app_quizzes_v1",
 };
 
 // Learning levels enum
@@ -44,6 +46,7 @@ export default function ParentDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [children, setChildren] = useState([]);
+  const [childProgress, setChildProgress] = useState({});
   const [selectedSection, setSelectedSection] = useState("dashboard"); // dashboard | addChild | editChild | progress
 
   // Child form state
@@ -73,18 +76,31 @@ export default function ParentDashboard() {
         return;
       }
 
-      const stored = await AsyncStorage.getItem(STORAGE.CHILDREN);
-      if (stored) {
-        const allChildren = JSON.parse(stored);
+      const [storedChildren, storedProgress] = await Promise.all([
+        AsyncStorage.getItem(STORAGE.CHILDREN),
+        AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS),
+      ]);
+
+      if (storedChildren) {
+        const allChildren = JSON.parse(storedChildren);
         // Filter children for current parent
         const parentChildren = allChildren[user.id] || [];
         setChildren(parentChildren);
       } else {
         setChildren([]);
       }
+
+      // Load progress for all children
+      if (storedProgress) {
+        const allProgress = JSON.parse(storedProgress);
+        setChildProgress(allProgress);
+      } else {
+        setChildProgress({});
+      }
     } catch (e) {
       console.warn("Failed to load children", e);
       setChildren([]);
+      setChildProgress({});
     } finally {
       setLoading(false);
     }
@@ -92,7 +108,9 @@ export default function ParentDashboard() {
 
   const saveChildren = async (childrenList) => {
     try {
-      if (!user?.id) return;
+      if (!user?.id) {
+        throw new Error("User ID is missing. Please log in again.");
+      }
 
       const stored = await AsyncStorage.getItem(STORAGE.CHILDREN);
       let allChildren = stored ? JSON.parse(stored) : {};
@@ -101,6 +119,7 @@ export default function ParentDashboard() {
       setChildren(childrenList);
     } catch (e) {
       console.warn("Failed to save children", e);
+      throw e; // Re-throw so the calling function can handle it
     }
   };
 
@@ -127,84 +146,107 @@ export default function ParentDashboard() {
   };
 
   const handleAddChild = async () => {
-    if (!childNickname.trim()) {
-      Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterChildNickname"));
-      return;
+    try {
+      if (!childNickname.trim()) {
+        Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterChildNickname"));
+        return;
+      }
+
+      if (!childParentPhone.trim()) {
+        Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterParentPhone"));
+        return;
+      }
+
+      const age = parseInt(childAge);
+      if (!age || age < 4 || age > 6) {
+        Alert.alert(i18n.t("invalidAge"), i18n.t("pleaseEnterValidAge"));
+        return;
+      }
+
+      const newChild = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9), // UUID-like (backend will generate actual UUID)
+        nickname: childNickname.trim(),
+        avatarUrl: childAvatarUri || null, // Optional field - stores URI locally
+        age: age,
+        parentPhone: childParentPhone.trim(),
+        learningLevel: childLearningLevel,
+      };
+
+      const updated = [...children, newChild];
+      await saveChildren(updated);
+      
+      Alert.alert(i18n.t("success"), i18n.t("childAddedSuccessfully"));
+      
+      // Reset form
+      setChildNickname("");
+      setChildAvatarUri(null);
+      setChildAge("");
+      setChildParentPhone("");
+      setChildLearningLevel(LearningLevel.BEGINNER);
+      setSelectedSection("dashboard");
+      
+      // Reload children to refresh the list
+      await loadChildren();
+    } catch (error) {
+      console.error("Error adding child:", error);
+      Alert.alert(i18n.t("error"), "Failed to add child. Please try again.");
     }
-
-    if (!childParentPhone.trim()) {
-      Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterParentPhone"));
-      return;
-    }
-
-    const age = parseInt(childAge);
-    if (!age || age < 4 || age > 6) {
-      Alert.alert(i18n.t("invalidAge"), i18n.t("pleaseEnterValidAge"));
-      return;
-    }
-
-    const newChild = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9), // UUID-like (backend will generate actual UUID)
-      nickname: childNickname.trim(),
-      avatarUrl: childAvatarUri || null, // Optional field - stores URI locally
-      age: age,
-      parentPhone: childParentPhone.trim(),
-      learningLevel: childLearningLevel,
-    };
-
-    const updated = [...children, newChild];
-    await saveChildren(updated);
-    
-    Alert.alert(i18n.t("success"), i18n.t("childAddedSuccessfully"));
-    // Reset form
-    setChildNickname("");
-    setChildAvatarUri(null);
-    setChildAge("");
-    setChildParentPhone("");
-    setChildLearningLevel(LearningLevel.BEGINNER);
-    setSelectedSection("dashboard");
   };
 
   const handleEditChild = async () => {
-    if (!editingChildId || !childNickname.trim()) {
-      Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterChildNickname"));
-      return;
+    try {
+      if (!editingChildId) {
+        Alert.alert(i18n.t("error"), "No child selected for editing");
+        return;
+      }
+
+      if (!childNickname.trim()) {
+        Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterChildNickname"));
+        return;
+      }
+
+      if (!childParentPhone.trim()) {
+        Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterParentPhone"));
+        return;
+      }
+
+      const age = parseInt(childAge);
+      if (!age || age < 4 || age > 6) {
+        Alert.alert(i18n.t("invalidAge"), i18n.t("pleaseEnterValidAge"));
+        return;
+      }
+
+      const updated = children.map((child) =>
+        child.id === editingChildId
+          ? {
+              ...child,
+              nickname: childNickname.trim(),
+              avatarUrl: childAvatarUri || null,
+              age: age,
+              parentPhone: childParentPhone.trim(),
+              learningLevel: childLearningLevel,
+            }
+          : child
+      );
+
+      await saveChildren(updated);
+      Alert.alert(i18n.t("success"), i18n.t("childUpdatedSuccessfully"));
+      
+      // Reset form
+      setChildNickname("");
+      setChildAvatarUri(null);
+      setChildAge("");
+      setChildParentPhone("");
+      setChildLearningLevel(LearningLevel.BEGINNER);
+      setEditingChildId(null);
+      setSelectedSection("dashboard");
+      
+      // Reload children to refresh the list
+      await loadChildren();
+    } catch (error) {
+      console.error("Error editing child:", error);
+      Alert.alert(i18n.t("error"), "Failed to update child. Please try again.");
     }
-
-    if (!childParentPhone.trim()) {
-      Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterParentPhone"));
-      return;
-    }
-
-    const age = parseInt(childAge);
-    if (!age || age < 4 || age > 6) {
-      Alert.alert(i18n.t("invalidAge"), i18n.t("pleaseEnterValidAge"));
-      return;
-    }
-
-    const updated = children.map((child) =>
-      child.id === editingChildId
-        ? {
-            ...child,
-            nickname: childNickname.trim(),
-            avatarUrl: childAvatarUri || null,
-            age: age,
-            parentPhone: childParentPhone.trim(),
-            learningLevel: childLearningLevel,
-          }
-        : child
-    );
-
-    await saveChildren(updated);
-    Alert.alert(i18n.t("success"), i18n.t("childUpdatedSuccessfully"));
-    // Reset form
-    setChildNickname("");
-    setChildAvatarUri(null);
-    setChildAge("");
-    setChildParentPhone("");
-    setChildLearningLevel(LearningLevel.BEGINNER);
-    setEditingChildId(null);
-    setSelectedSection("dashboard");
   };
 
   const handleDeleteChild = (childId) => {
@@ -265,19 +307,30 @@ export default function ParentDashboard() {
 
   const viewChildProgress = async (childId) => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE.CHILD_PROGRESS);
+      const stored = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
       const allProgress = stored ? JSON.parse(stored) : {};
-      const childProgress = allProgress[childId] || {
-        lessonsCompleted: [],
+      const progress = allProgress[childId] || {
         videosCompleted: [],
         quizResults: [],
       };
 
+      // Load videos and quizzes count for display
+      const [rawVideos, rawQuizzes] = await Promise.all([
+        AsyncStorage.getItem(STORAGE.VIDEOS),
+        AsyncStorage.getItem(STORAGE.QUIZZES),
+      ]);
+      const videos = rawVideos ? JSON.parse(rawVideos) : [];
+      const quizzes = rawQuizzes ? JSON.parse(rawQuizzes) : {};
+
+      const videosWatched = progress.videosCompleted?.length || 0;
+      const totalVideos = videos.length;
+      const quizzesCompleted = progress.quizResults?.length || 0;
+      const totalQuizzes = Object.keys(quizzes).length;
+
       Alert.alert(
         i18n.t("childProgress"),
-        `${i18n.t("lessonsCompleted")}: ${childProgress.lessonsCompleted.length}\n` +
-        `${i18n.t("videosWatched")}: ${childProgress.videosCompleted.length}\n` +
-        `${i18n.t("quizzesCompleted")}: ${childProgress.quizResults.length}`,
+        `🎬 ${i18n.t("videosWatched")}: ${videosWatched} / ${totalVideos}\n` +
+        `❓ ${i18n.t("quizzesCompleted")}: ${quizzesCompleted} / ${totalQuizzes}`,
         [{ text: i18n.t("ok") }]
       );
     } catch (e) {
@@ -334,6 +387,19 @@ export default function ParentDashboard() {
       paddingVertical: 20,
       paddingHorizontal: 20,
       paddingTop: Platform.OS === "android" ? 20 : 60,
+      borderBottomLeftRadius: 20,
+      borderBottomRightRadius: 20,
+      ...Platform.select({
+        ios: {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+        },
+        android: {
+          elevation: 4,
+        },
+      }),
     },
     headerContent: {
       flexDirection: "row",
@@ -428,6 +494,22 @@ export default function ParentDashboard() {
       fontSize: 18,
       fontWeight: "bold",
       color: "#0F172A",
+      marginBottom: 6,
+    },
+    progressIcons: {
+      flexDirection: "row",
+      gap: 16,
+      alignItems: "center",
+    },
+    progressIconItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    progressIconText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#64748B",
     },
     childInfo: {
       fontSize: 14,
@@ -584,12 +666,37 @@ export default function ParentDashboard() {
       color: "#10B981",
       fontWeight: "600",
     },
+    formButtons: {
+      flexDirection: "row",
+      gap: 12,
+      marginTop: 20,
+      marginBottom: 20,
+      zIndex: 10,
+    },
     submitButton: {
       backgroundColor: "#10B981",
       padding: 16,
       borderRadius: 8,
       alignItems: "center",
-      marginTop: 8,
+      flex: 1,
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: 8,
+      minHeight: 50,
+      ...Platform.select({
+        ios: {
+          shadowColor: "#10B981",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.2,
+          shadowRadius: 4,
+        },
+        android: {
+          elevation: 3,
+        },
+      }),
+    },
+    saveButton: {
+      backgroundColor: "#10B981",
     },
     submitButtonText: {
       color: "#FFFFFF",
@@ -597,14 +704,22 @@ export default function ParentDashboard() {
       fontWeight: "600",
     },
     cancelButton: {
-      backgroundColor: "#64748B",
       padding: 16,
       borderRadius: 8,
       alignItems: "center",
-      marginTop: 8,
+      flex: 1,
+    },
+    cancelButtonStyled: {
+      backgroundColor: "#F1F5F9",
+      borderWidth: 1,
+      borderColor: "#E2E8F0",
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: 8,
+      minHeight: 50,
     },
     cancelButtonText: {
-      color: "#FFFFFF",
+      color: "#64748B",
       fontSize: 16,
       fontWeight: "600",
     },
@@ -644,28 +759,27 @@ export default function ParentDashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View>
-            <Text style={styles.headerTitle}>{i18n.t("parent")} {i18n.t("dashboard")}</Text>
-            <Text style={styles.headerSubtitle}>
-              {children.length} {children.length === 1 ? "child" : "children"}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={handleLogout}
-            style={styles.logoutButton}
-            accessibilityLabel="Logout"
-          >
-            <Ionicons name="log-out-outline" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          onPress={handleLogout}
+          style={styles.logoutButton}
+          accessibilityLabel="Logout"
+        >
+          <Ionicons name="log-out-outline" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView 
+          style={styles.content} 
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}
+        >
           {selectedSection === "dashboard" && (
             <>
               <TouchableOpacity
@@ -709,15 +823,30 @@ export default function ParentDashboard() {
                           <Ionicons name="person" size={24} color="#CBD5E1" />
                         </View>
                       )}
-                      <Text style={styles.childName}>{child.nickname}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.childName}>{child.nickname}</Text>
+                        {/* Progress Icons */}
+                        <View style={styles.progressIcons}>
+                          {(() => {
+                            const progress = childProgress[child.id] || {};
+                            const videosWatched = progress.videosCompleted?.length || 0;
+                            const quizzesCompleted = progress.quizResults?.length || 0;
+                            return (
+                              <>
+                                <View style={styles.progressIconItem}>
+                                  <Ionicons name="videocam" size={16} color="#10B981" />
+                                  <Text style={styles.progressIconText}>{videosWatched}</Text>
+                                </View>
+                                <View style={styles.progressIconItem}>
+                                  <Ionicons name="help-circle" size={16} color="#2563EB" />
+                                  <Text style={styles.progressIconText}>{quizzesCompleted}</Text>
+                                </View>
+                              </>
+                            );
+                          })()}
+                        </View>
+                      </View>
                     </View>
-                    <Text style={styles.childInfo}>{i18n.t("age")}: {child.age}</Text>
-                    <Text style={styles.childInfo}>
-                      {i18n.t("level")}: {child.learningLevel === LearningLevel.BEGINNER ? i18n.t("beginner") : child.learningLevel === LearningLevel.INTERMEDIATE ? i18n.t("intermediate") : i18n.t("advanced")}
-                    </Text>
-                    {child.parentPhone && (
-                      <Text style={styles.childInfo}>{i18n.t("phone")}: {child.parentPhone}</Text>
-                    )}
                     <View style={styles.childActions}>
                       <TouchableOpacity
                         style={[styles.actionButton, styles.progressButton]}
@@ -887,29 +1016,41 @@ export default function ParentDashboard() {
                 </TouchableOpacity>
               </Modal>
 
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={selectedSection === "addChild" ? handleAddChild : handleEditChild}
-              >
-                <Text style={styles.submitButtonText}>
-                  {selectedSection === "addChild" ? i18n.t("saveChild") : i18n.t("saveChanges")}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.formButtons}>
+                <TouchableOpacity
+                  style={[styles.submitButton, styles.saveButton]}
+                  onPress={() => {
+                    if (selectedSection === "addChild") {
+                      handleAddChild();
+                    } else if (selectedSection === "editChild") {
+                      handleEditChild();
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                  <Text style={styles.submitButtonText}>
+                    {selectedSection === "addChild" ? i18n.t("saveChild") : i18n.t("saveChanges")}
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => {
-                  setSelectedSection("dashboard");
-                  setEditingChildId(null);
-                  setChildNickname("");
-                  setChildAvatarUri(null);
-                  setChildAge("");
-                  setChildParentPhone("");
-                  setChildLearningLevel(LearningLevel.BEGINNER);
-                }}
-              >
-                <Text style={styles.cancelButtonText}>{i18n.t("cancel")}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.cancelButton, styles.cancelButtonStyled]}
+                  onPress={() => {
+                    setSelectedSection("dashboard");
+                    setEditingChildId(null);
+                    setChildNickname("");
+                    setChildAvatarUri(null);
+                    setChildAge("");
+                    setChildParentPhone("");
+                    setChildLearningLevel(LearningLevel.BEGINNER);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="close-circle" size={20} color="#64748B" />
+                  <Text style={styles.cancelButtonText}>{i18n.t("cancel")}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
         </ScrollView>

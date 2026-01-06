@@ -34,12 +34,12 @@ const isTablet = width >= 768;
 const isSmallScreen = width < 375;
 
 const STORAGE = {
-  LESSONS: "@app_lessons_v1",
   VIDEOS: "@app_videos_v1",
   QUIZZES: "@app_quizzes_v1",
+  COLLECTIONS: "@app_collections_v1",
   // progress for teachers - tracks per student
   PROGRESS: "@app_progress_v1",
-  STUDENT_PROGRESS: "@app_student_progress_v1", // { studentId: { lessonsCompleted: [], videosCompleted: [], videoWatchingDetails: [], quizResults: [] } }
+  STUDENT_PROGRESS: "@app_student_progress_v1", // { studentId: { videosCompleted: [], videoWatchingDetails: [], quizResults: [] } }
   TEACHER_PROFILES: "@app_teacher_profiles_v1",
 };
 
@@ -87,26 +87,31 @@ export default function TeacherDashboard() {
   const [profile, setProfile] = useState(null);
 
   // Data
-  const [lessons, setLessons] = useState([]);
   const [videos, setVideos] = useState([]);
   const [quizzes, setQuizzes] = useState({}); // object keyed by id
+  const [collections, setCollections] = useState({}); // object keyed by id
 
   // Local UI state
-  const [selectedSection, setSelectedSection] = useState("dashboard"); // dashboard | lessons | videos | quizzes | progress
+  const [selectedSection, setSelectedSection] = useState("dashboard"); // dashboard | videos | quizzes | progress
   const [detail, setDetail] = useState(null); // optional inline detail like Kids
-
-  // Lesson form / edit
-  const [lessonTitle, setLessonTitle] = useState("");
-  const [lessonDescription, setLessonDescription] = useState("");
-  const [lessonCategory, setLessonCategory] = useState("");
-  const [lessonPdfUri, setLessonPdfUri] = useState(null);
-  const [editingLessonId, setEditingLessonId] = useState(null);
 
   // Video form / edit
   const [videoTitle, setVideoTitle] = useState("");
   const [videoDescription, setVideoDescription] = useState("");
-  const [videoUri, setVideoUri] = useState(null);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [durationSeconds, setDurationSeconds] = useState("");
+  const [videoDifficulty, setVideoDifficulty] = useState("easy"); // easy, medium, hard
+  const [videoTags, setVideoTags] = useState("");
+  const [videoIsPublished, setVideoIsPublished] = useState(true);
   const [editingVideoId, setEditingVideoId] = useState(null);
+  const [showDifficultyModal, setShowDifficultyModal] = useState(false);
+  const [videoCollection, setVideoCollection] = useState(""); // selected collection ID for video
+
+  // Collection form
+  const [collectionTitle, setCollectionTitle] = useState("");
+  const [collectionDescription, setCollectionDescription] = useState("");
+  const [showCollectionModal, setShowCollectionModal] = useState(false);
 
   // Quiz builder
   const [quizTitle, setQuizTitle] = useState("");
@@ -127,7 +132,7 @@ export default function TeacherDashboard() {
 
   // progress (teacher view)
   const [progress, setProgress] = useState([]);
-  const [studentProgress, setStudentProgress] = useState({}); // { studentId: { name, lessonsCompleted, videosCompleted, quizResults } }
+  const [studentProgress, setStudentProgress] = useState({}); // { studentId: { name, videosCompleted, quizResults } }
 
   // Pick profile photo directly from dashboard
   const pickProfilePhoto = async () => {
@@ -199,17 +204,17 @@ export default function TeacherDashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const [rawLessons, rawVideos, rawQuizzes, rawProgress, rawStudentProgress] = await Promise.all([
-          AsyncStorage.getItem(STORAGE.LESSONS),
+        const [rawVideos, rawQuizzes, rawCollections, rawProgress, rawStudentProgress] = await Promise.all([
           AsyncStorage.getItem(STORAGE.VIDEOS),
           AsyncStorage.getItem(STORAGE.QUIZZES),
+          AsyncStorage.getItem(STORAGE.COLLECTIONS),
           AsyncStorage.getItem(STORAGE.PROGRESS),
           AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS),
 
         ]);
-        setLessons(rawLessons ? JSON.parse(rawLessons) : []);
         setVideos(rawVideos ? JSON.parse(rawVideos) : []);
         setQuizzes(rawQuizzes ? JSON.parse(rawQuizzes) : {});
+        setCollections(rawCollections ? JSON.parse(rawCollections) : {});
         setProgress(rawProgress ? JSON.parse(rawProgress) : []);
         setStudentProgress(rawStudentProgress ? JSON.parse(rawStudentProgress) : {});
       } catch (e) {
@@ -255,91 +260,39 @@ useFocusEffect(
     }
   };
 
-  // ---------- LESSONS ----------
-  const pickLessonPdf = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ 
-        type: "application/pdf",
-        copyToCacheDirectory: true,
-      });
-      
-      // expo-document-picker v14+ returns { canceled: boolean, assets: [...] }
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const file = result.assets[0];
-        setLessonPdfUri(file.uri);
-        Alert.alert(i18n.t('success'), `${i18n.t('pdf')} "${file.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
-      } else if (result.type === "success") {
-        // Fallback for older API format
-        setLessonPdfUri(result.uri);
-        Alert.alert(i18n.t('success'), `${i18n.t('pdf')} "${result.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
-      }
-    } catch (e) {
-      console.warn("pickLessonPdf error", e);
-      Alert.alert(i18n.t('error'), i18n.t('failedToPickPdf'));
-    }
-  };
-
-  const addLesson = async () => {
-    if (!lessonTitle.trim()) {
-      Alert.alert(i18n.t('enterLessonTitle'));
+  // ---------- COLLECTIONS ----------
+  const addCollection = async () => {
+    if (!collectionTitle.trim()) {
+      Alert.alert(i18n.t('error'), "Collection title is required");
       return;
     }
-    if (!lessonPdfUri) {
-      Alert.alert(i18n.t('uploadPdfForLesson'));
-      return;
-    }
+    const id = Date.now().toString();
     const item = {
-      id: Date.now().toString(),
-      title: lessonTitle.trim(),
-      description: lessonDescription.trim(),
-      category: lessonCategory.trim(),
-      pdfUri: lessonPdfUri,
+      id,
+      title: collectionTitle.trim(),
+      description: collectionDescription.trim(),
       createdAt: new Date().toISOString(),
     };
-    const updated = [item, ...lessons];
-    setLessons(updated);
-    await persist(STORAGE.LESSONS, updated);
-    Alert.alert(i18n.t('success'), i18n.t('lessonUploadedSuccessfully'));
-    setLessonTitle("");
-    setLessonDescription("");
-    setLessonCategory("");
-    setLessonPdfUri(null);
+    const updated = { ...collections, [id]: item };
+    setCollections(updated);
+    await persist(STORAGE.COLLECTIONS, updated);
+    Alert.alert(i18n.t('success'), "Collection created successfully");
+    setCollectionTitle("");
+    setCollectionDescription("");
+    setShowCollectionModal(false);
   };
 
-  const startEditLesson = (id) => {
-    const l = lessons.find((x) => x.id === id);
-    if (!l) return;
-    setEditingLessonId(id);
-    setLessonTitle(l.title);
-    setLessonDescription(l.description || "");
-    setLessonCategory(l.category || "");
-    setLessonPdfUri(l.pdfUri || null);
-  };
-
-  const saveEditLesson = async () => {
-    if (!editingLessonId) return;
-    const updated = lessons.map((l) =>
-      l.id === editingLessonId ? { ...l, title: lessonTitle, description: lessonDescription, category: lessonCategory, pdfUri: lessonPdfUri || l.pdfUri } : l
-    );
-    setLessons(updated);
-    await persist(STORAGE.LESSONS, updated);
-    setEditingLessonId(null);
-    setLessonTitle("");
-    setLessonDescription("");
-    setLessonCategory("");
-    setLessonPdfUri(null);
-  };
-
-  const deleteLesson = (id) => {
-    Alert.alert(i18n.t('deleteLessonConfirm'), i18n.t('areYouSure'), [
+  const deleteCollection = (id) => {
+    Alert.alert("Delete Collection", i18n.t('areYouSure'), [
       { text: i18n.t('cancel') },
       {
         text: i18n.t('delete'),
         style: "destructive",
         onPress: async () => {
-          const updated = lessons.filter((l) => l.id !== id);
-          setLessons(updated);
-          await persist(STORAGE.LESSONS, updated);
+          const updated = { ...collections };
+          delete updated[id];
+          setCollections(updated);
+          await persist(STORAGE.COLLECTIONS, updated);
         },
       },
     ]);
@@ -357,11 +310,11 @@ useFocusEffect(
       // expo-document-picker v14+ returns { canceled: boolean, assets: [...] }
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
-        setVideoUri(file.uri);
+        setVideoUrl(file.uri);
         Alert.alert(i18n.t('success'), `${i18n.t('video')} "${file.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
       } else if (result.type === "success") {
         // Fallback for older API format
-        setVideoUri(result.uri);
+        setVideoUrl(result.uri);
         Alert.alert(i18n.t('success'), `${i18n.t('video')} "${result.name || i18n.t('file')}" ${i18n.t('selectedSuccessfully')}`);
       }
     } catch (e) {
@@ -370,45 +323,130 @@ useFocusEffect(
     }
   };
 
+  const pickThumbnail = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(i18n.t('permissionRequired'), i18n.t('allowGalleryAccess'));
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+      if (!result.canceled) {
+        setThumbnailUrl(result.assets[0].uri);
+      }
+    } catch (e) {
+      console.warn("pickThumbnail error", e);
+      Alert.alert(i18n.t('error'), "Failed to pick thumbnail image");
+    }
+  };
+
   const addVideo = async () => {
-    if (!videoTitle.trim() || !videoUri) {
-      Alert.alert(i18n.t('enterTitlePickVideo'));
+    if (!videoTitle.trim()) {
+      Alert.alert(i18n.t('error'), "Title is required");
       return;
     }
+    if (!videoDescription.trim()) {
+      Alert.alert(i18n.t('error'), "Description is required");
+      return;
+    }
+    if (!videoDifficulty) {
+      Alert.alert(i18n.t('error'), "Difficulty is required");
+      return;
+    }
+    
+    const videoId = Date.now().toString();
     const item = {
-      id: Date.now().toString(),
+      id: videoId,
       title: videoTitle.trim(),
       description: videoDescription.trim(),
-      uri: videoUri,
+      video_url: videoUrl.trim() || null,
+      thumbnail_url: thumbnailUrl.trim() || null,
+      duration_seconds: durationSeconds ? parseInt(durationSeconds) : null,
+      difficulty: videoDifficulty,
+      collection: videoCollection ? videoCollection : null,
+      tags: videoTags.trim() ? videoTags.trim().split(',').map(t => t.trim()) : [],
+      is_published: videoIsPublished,
       createdAt: new Date().toISOString(),
     };
     const updated = [item, ...videos];
     setVideos(updated);
     await persist(STORAGE.VIDEOS, updated);
+    
     Alert.alert(i18n.t('success'), i18n.t('videoUploadedSuccessfully'));
+    // Reset form
     setVideoTitle("");
     setVideoDescription("");
-    setVideoUri(null);
+    setVideoUrl("");
+    setThumbnailUrl("");
+    setDurationSeconds("");
+    setVideoDifficulty("easy");
+    setVideoTags("");
+    setVideoIsPublished(true);
   };
 
   const startEditVideo = (id) => {
     const v = videos.find((x) => x.id === id);
     if (!v) return;
     setEditingVideoId(id);
-    setVideoTitle(v.title);
+    setVideoTitle(v.title || "");
     setVideoDescription(v.description || "");
-    setVideoUri(v.uri || null);
+    setVideoUrl(v.video_url || v.uri || ""); // Support both video_url and uri for backward compatibility
+    setThumbnailUrl(v.thumbnail_url || "");
+    setDurationSeconds(v.duration_seconds ? String(v.duration_seconds) : "");
+    setVideoDifficulty(v.difficulty || "easy");
+    setVideoCollection(v.collection ? String(v.collection) : "");
+    setVideoTags(Array.isArray(v.tags) ? v.tags.join(', ') : (v.tags || ""));
+    setVideoIsPublished(v.is_published !== undefined ? v.is_published : true);
   };
 
   const saveEditVideo = async () => {
     if (!editingVideoId) return;
-    const updated = videos.map((v) => (v.id === editingVideoId ? { ...v, title: videoTitle, description: videoDescription, uri: videoUri } : v));
+    if (!videoTitle.trim()) {
+      Alert.alert(i18n.t('error'), "Title is required");
+      return;
+    }
+    if (!videoDescription.trim()) {
+      Alert.alert(i18n.t('error'), "Description is required");
+      return;
+    }
+    if (!videoDifficulty) {
+      Alert.alert(i18n.t('error'), "Difficulty is required");
+      return;
+    }
+    
+    const updated = videos.map((v) => 
+      v.id === editingVideoId ? {
+        ...v,
+        title: videoTitle.trim(),
+        description: videoDescription.trim(),
+        video_url: videoUrl.trim() || null,
+        thumbnail_url: thumbnailUrl.trim() || null,
+        duration_seconds: durationSeconds ? parseInt(durationSeconds) : null,
+        difficulty: videoDifficulty,
+        collection: videoCollection ? videoCollection : null,
+        tags: videoTags.trim() ? videoTags.trim().split(',').map(t => t.trim()) : [],
+        is_published: videoIsPublished,
+      } : v
+    );
     setVideos(updated);
     await persist(STORAGE.VIDEOS, updated);
+    
     setEditingVideoId(null);
+    // Reset form
     setVideoTitle("");
     setVideoDescription("");
-    setVideoUri(null);
+    setVideoUrl("");
+    setThumbnailUrl("");
+    setDurationSeconds("");
+    setVideoDifficulty("easy");
+    setVideoCollection("");
+    setVideoTags("");
+    setVideoIsPublished(true);
   };
 
   const deleteVideo = (id) => {
@@ -686,11 +724,11 @@ useFocusEffect(
         <View style={styles.itemCard}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>
-              {type === "lessons" ? "📘 " : type === "videos" ? "🎬 " : "❓ "}
+              {type === "videos" ? "🎬 " : "❓ "}
               {item.title}
             </Text>
             <View style={styles.cardBadge}>
-              <Text style={styles.cardBadgeText}>{type === "lessons" ? item.category || "Lesson" : type}</Text>
+              <Text style={styles.cardBadgeText}>{type}</Text>
             </View>
           </View>
           {item.description ? <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text> : null}
@@ -721,32 +759,24 @@ useFocusEffect(
   // Section toggles: dashboard / lessons / videos / quizzes / progress
   return (
     <SafeAreaView style={styles.container}>
-      {/* header */}
-      <View style={styles.header}>
-        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          <Image
-            source={require("../../assets/images/logo.png")}
-            style={{ width: 40, height: 40, borderRadius: 20, marginRight: 12 }}
-            resizeMode="cover"
-          />
-          <TouchableOpacity
-            onPress={() => router.push("/profile")}
-            accessibilityLabel={i18n.t('goToProfile')}
-            style={{ marginRight: 10 }}
-          >
-            {profile?.photo && profile.photo.trim() !== "" ? (
-              <Image source={{ uri: profile.photo }} style={styles.profilePhoto} />
-            ) : (
-              <View style={[styles.profilePhoto, { backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" }]}>
-                <Ionicons name="person" size={24} color="#fff" />
-              </View>
-            )}
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerHi}>{i18n.t('hello')}</Text>
-            <Text style={styles.headerName}>{profile?.name || i18n.t('teacher')}</Text>
+      {/* Top bar with avatar and actions */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          onPress={pickProfilePhoto}
+          accessibilityLabel={i18n.t('goToProfile')}
+          style={{ position: "relative" }}
+        >
+          {profile?.photo && profile.photo.trim() !== "" ? (
+            <Image source={{ uri: profile.photo }} style={styles.profileAvatar} />
+          ) : (
+            <View style={[styles.profileAvatar, { backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" }]}>
+              <Ionicons name="person" size={28} color="#fff" />
+            </View>
+          )}
+          <View style={styles.avatarEditBadge}>
+            <Ionicons name="camera" size={14} color="#fff" />
           </View>
-        </View>
+        </TouchableOpacity>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           {/* Language Switcher */}
           <TouchableOpacity 
@@ -756,17 +786,15 @@ useFocusEffect(
               const nextIndex = (currentIndex + 1) % languages.length;
               changeLanguage(languages[nextIndex]);
             }}
-            style={[styles.logoutBtn, { backgroundColor: "#f0f0f0", paddingVertical: 6, paddingHorizontal: 10 }]}
+            style={[styles.actionButton, { backgroundColor: "#f0f0f0" }]}
             accessibilityLabel={i18n.t('selectLanguage')}
           >
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#4c1d95" }}>
-              {language === "en" ? "🇬🇧 EN" : language === "ti" ? "🇪🇷 TI" : "🇪🇹 AM"}
-            </Text>
+            <Ionicons name="language" size={20} color="#4c1d95" />
           </TouchableOpacity>
           
           {/* Logout Button */}
-          <TouchableOpacity onPress={() => router.replace("/(drawer)/login")} style={styles.logoutBtn}>
-            <Text style={styles.logoutText}>{i18n.t('logout')}</Text>
+          <TouchableOpacity onPress={() => router.replace("/(drawer)/login")} style={styles.actionButton}>
+            <Ionicons name="log-out-outline" size={20} color="#EF4444" />
           </TouchableOpacity>
         </View>
       </View>
@@ -789,65 +817,10 @@ useFocusEffect(
                 <Ionicons name="close" size={28} color="#000" />
               </TouchableOpacity>
               <Text style={styles.fullscreenHeaderTitle}>
-                {detail?.type === "lessons" ? i18n.t('lesson') : detail?.type === "videos" ? i18n.t('video') : i18n.t('quiz')}
+                {detail?.type === "videos" ? i18n.t('video') : i18n.t('quiz')}
               </Text>
               <View style={{ width: 44 }} />
             </View>
-
-            {detail?.type === "lessons" && (
-              <ScrollView contentContainerStyle={[
-                styles.fullscreenContent,
-                { paddingHorizontal: isTablet ? 40 : isSmallScreen ? 12 : 18, maxWidth: isTablet ? 900 : "100%", alignSelf: "center", width: "100%" }
-              ]}>
-                <Text style={[styles.lessonTitle, { fontSize: isTablet ? 32 : 24 }]}>
-                  {detail.item.title}
-                </Text>
-                <Text style={[styles.lessonDesc, { fontSize: isTablet ? 18 : 16 }]}>
-                  {detail.item.description || i18n.t('noDescription')}
-                </Text>
-                <Text style={{ marginTop: 12, color: "#666", fontSize: isTablet ? 16 : 14 }}>
-                  {i18n.t('category')}: {detail.item.category || i18n.t('dash')}
-                </Text>
-                {detail.item.pdfUri ? (
-                  <View style={{ marginTop: 12, padding: 16, backgroundColor: "#f0f0f0", borderRadius: 8 }}>
-                    <Ionicons name="document-text" size={isTablet ? 32 : 24} color="#4c1d95" />
-                    <Text style={{ marginTop: 4, color: "#666", fontSize: isTablet ? 16 : 14 }}>
-                      {i18n.t('pdfUploaded')}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={{ marginTop: 12, color: "#999", fontStyle: "italic", fontSize: isTablet ? 16 : 14 }}>
-                    {i18n.t('noPdfUploaded')}
-                  </Text>
-                )}
-
-                <View style={{ flexDirection: "row", marginTop: 24, gap: 12 }}>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, { padding: isTablet ? 16 : 12 }]}
-                    onPress={() => {
-                      startEditLesson(detail.item.id);
-                      setDetail(null);
-                      setSelectedSection("lessons");
-                    }}
-                  >
-                    <Text style={[styles.smallBtnText, { fontSize: isTablet ? 16 : 14 }]}>
-                      {i18n.t('edit')}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, { backgroundColor: "#fff", borderWidth: 1, borderColor: "#ddd", padding: isTablet ? 16 : 12 }]}
-                    onPress={() => {
-                      deleteLesson(detail.item.id);
-                      setDetail(null);
-                    }}
-                  >
-                    <Text style={[styles.smallBtnText, { color: "red", fontSize: isTablet ? 16 : 14 }]}>
-                      {i18n.t('delete')}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            )}
 
             {detail?.type === "videos" && (
               <ScrollView contentContainerStyle={[
@@ -1114,66 +1087,6 @@ useFocusEffect(
             </>
           )}
 
-          {/* LESSONS MANAGEMENT */}
-          {selectedSection === "lessons" && (
-            <View>
-              <TouchableOpacity onPress={() => setSelectedSection("dashboard")} style={{ marginBottom: 10 }}>
-                <Ionicons name="arrow-back" size={24} color="#333" />
-              </TouchableOpacity>
-
-              <View style={styles.card}>
-                <Text style={styles.title}>{i18n.t('addEditLesson')}</Text>
-
-                <TextInput style={styles.input} placeholder={i18n.t('lessonTitle')} value={lessonTitle} onChangeText={setLessonTitle} />
-                <TextInput style={styles.input} placeholder={i18n.t('description')} value={lessonDescription} onChangeText={setLessonDescription} />
-                <TextInput style={styles.input} placeholder={i18n.t('category')} value={lessonCategory} onChangeText={setLessonCategory} />
-
-                <TouchableOpacity style={styles.fileBtn} onPress={pickLessonPdf}>
-                  <Ionicons name="document-text-outline" size={20} color={lessonPdfUri ? "#4c1d95" : "#333"} />
-                  <Text style={{ marginLeft: 8, color: lessonPdfUri ? "#4c1d95" : "#333", fontWeight: lessonPdfUri ? "700" : "400" }}>
-                    {lessonPdfUri ? i18n.t('pdfSelected') : i18n.t('pickPdfFile')}
-                  </Text>
-                </TouchableOpacity>
-
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  {editingLessonId ? (
-                    <>
-                      <TouchableOpacity style={styles.btn} onPress={saveEditLesson}>
-                        <Text style={styles.btnText}>Save</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => { setEditingLessonId(null); setLessonTitle(""); setLessonDescription(""); setLessonCategory(""); setLessonPdfUri(null); }}>
-                        <Text>Cancel</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <TouchableOpacity style={styles.btn} onPress={addLesson}>
-                      <Text style={styles.btnText}>Add Lesson</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              <Text style={{ fontWeight: "900", marginTop: 8 }}>{i18n.t('allLessons')}</Text>
-              {lessons.length === 0 ? (
-                <View style={styles.emptyBox}><Text style={styles.emptyText}>{i18n.t('noLessonsYet')}</Text></View>
-              ) : (
-                lessons.map((l) => (
-                  <View key={l.id} style={styles.item}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemTitle}>{l.title}</Text>
-                      {l.category ? <Text style={{ color: "#666", marginTop: 4 }}>{l.category}</Text> : null}
-                    </View>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <TouchableOpacity onPress={() => startEditLesson(l.id)}><Ionicons name="pencil" size={20} color="#007AFF" /></TouchableOpacity>
-                      <TouchableOpacity onPress={() => { setDetail({ type: "lessons", item: l }); }}><Ionicons name="eye" size={20} color="#333" /></TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteLesson(l.id)}><Ionicons name="trash" size={20} color="red" /></TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              )}
-            </View>
-          )}
-
           {/* VIDEOS MANAGEMENT */}
           {selectedSection === "videos" && (
             <View>
@@ -1184,21 +1097,192 @@ useFocusEffect(
               <View style={styles.card}>
                 <Text style={styles.title}>{i18n.t('addEditVideo')}</Text>
 
-                <TextInput style={styles.input} placeholder={i18n.t('videoTitle')} value={videoTitle} onChangeText={setVideoTitle} />
-                <TextInput style={styles.input} placeholder={i18n.t('description')} value={videoDescription} onChangeText={setVideoDescription} />
+                {/* Title - Required */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8 }}>Title *</Text>
+                <TextInput style={styles.input} placeholder="Enter lesson title" value={videoTitle} onChangeText={setVideoTitle} />
 
+                {/* Description - Required */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Description *</Text>
+                <TextInput style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]} placeholder="Enter lesson description" value={videoDescription} onChangeText={setVideoDescription} multiline numberOfLines={4} />
+
+                {/* Video URL - Optional */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Video URL (Optional)</Text>
+                <TextInput style={styles.input} placeholder="Enter video URL or pick video file" value={videoUrl} onChangeText={setVideoUrl} />
                 <TouchableOpacity style={styles.fileBtn} onPress={pickVideo}>
-                  <Ionicons name="videocam-outline" size={20} color={videoUri ? "#4c1d95" : "#333"} />
-                  <Text style={{ marginLeft: 8, color: videoUri ? "#4c1d95" : "#333", fontWeight: videoUri ? "700" : "400" }}>
-                    {videoUri ? i18n.t('videoSelected') : i18n.t('pickVideoFile')}
+                  <Ionicons name="videocam-outline" size={20} color={videoUrl ? "#4c1d95" : "#333"} />
+                  <Text style={{ marginLeft: 8, color: videoUrl ? "#4c1d95" : "#333", fontWeight: videoUrl ? "700" : "400" }}>
+                    {videoUrl ? "Video Selected" : "Pick Video File"}
                   </Text>
                 </TouchableOpacity>
 
-                <View style={{ flexDirection: "row", gap: 8 }}>
+                {/* Thumbnail URL - Optional */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Thumbnail URL (Optional)</Text>
+                <TextInput style={styles.input} placeholder="Enter thumbnail URL or pick image" value={thumbnailUrl} onChangeText={setThumbnailUrl} />
+                <TouchableOpacity style={styles.fileBtn} onPress={pickThumbnail}>
+                  <Ionicons name="image-outline" size={20} color={thumbnailUrl ? "#4c1d95" : "#333"} />
+                  <Text style={{ marginLeft: 8, color: thumbnailUrl ? "#4c1d95" : "#333", fontWeight: thumbnailUrl ? "700" : "400" }}>
+                    {thumbnailUrl ? "Thumbnail Selected" : "Pick Thumbnail Image"}
+                  </Text>
+                </TouchableOpacity>
+                {thumbnailUrl ? (
+                  <Image source={{ uri: thumbnailUrl }} style={{ width: "100%", height: 150, marginTop: 8, borderRadius: 8, resizeMode: "cover" }} />
+                ) : null}
+
+                {/* Duration Seconds - Optional */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Duration (seconds) (Optional)</Text>
+                <TextInput style={styles.input} placeholder="Enter duration in seconds" value={durationSeconds} onChangeText={setDurationSeconds} keyboardType="numeric" />
+
+                {/* Difficulty - Required */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Difficulty *</Text>
+                <TouchableOpacity
+                  style={[styles.input, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14 }]}
+                  onPress={() => setShowDifficultyModal(true)}
+                >
+                  <Text style={{ color: videoDifficulty ? "#000" : "#999", textTransform: "capitalize" }}>
+                    {videoDifficulty || "Select difficulty"}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#64748B" />
+                </TouchableOpacity>
+
+                {/* Collection - Optional */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Collection (Optional)</Text>
+                <TouchableOpacity
+                  style={[styles.input, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14 }]}
+                  onPress={() => {
+                    Alert.alert(
+                      "Select Collection",
+                      "Choose a collection or create a new one",
+                      [
+                        { text: "None", onPress: () => setVideoCollection("") },
+                        ...Object.values(collections).map((c) => ({
+                          text: c.title,
+                          onPress: () => setVideoCollection(c.id),
+                        })),
+                        { text: "Create New Collection", onPress: () => setShowCollectionModal(true), style: "default" },
+                        { text: "Cancel", style: "cancel" },
+                      ],
+                      { cancelable: true }
+                    );
+                  }}
+                >
+                  <Text style={{ color: videoCollection ? "#000" : "#999", fontSize: 15 }}>
+                    {videoCollection ? collections[videoCollection]?.title || "Select collection" : "Select collection (optional)"}
+                  </Text>
+                  <Ionicons name="chevron-down" size={20} color="#64748B" />
+                </TouchableOpacity>
+
+                {/* Create Collection Section */}
+                <View style={{ marginTop: 16, padding: 16, backgroundColor: "#F8FAFC", borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0" }}>
+                  <Text style={{ fontSize: 16, fontWeight: "700", marginBottom: 12, color: "#0F172A" }}>Create Collection</Text>
+                  
+                  <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8 }}>Title *</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Enter collection title" 
+                    value={collectionTitle} 
+                    onChangeText={setCollectionTitle} 
+                  />
+                  
+                  <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Description (Optional)</Text>
+                  <TextInput 
+                    style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]} 
+                    placeholder="Enter collection description" 
+                    value={collectionDescription} 
+                    onChangeText={setCollectionDescription}
+                    multiline
+                    numberOfLines={3}
+                  />
+                  
+                  <TouchableOpacity style={[styles.btn, { marginTop: 8, backgroundColor: "#2563EB" }]} onPress={addCollection}>
+                    <Text style={styles.btnText}>Create Collection</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Tags - Optional */}
+                <Text style={{ fontSize: 14, fontWeight: "600", marginBottom: 8, marginTop: 4 }}>Tags (Optional)</Text>
+                <TextInput style={styles.input} placeholder="Enter tags separated by commas (e.g., alphabet, phonics)" value={videoTags} onChangeText={setVideoTags} />
+
+                {/* Is Published - Required */}
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 12, marginBottom: 8 }}>
+                  <TouchableOpacity
+                    style={{ flexDirection: "row", alignItems: "center" }}
+                    onPress={() => setVideoIsPublished(!videoIsPublished)}
+                  >
+                    <View style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 4,
+                      borderWidth: 2,
+                      borderColor: videoIsPublished ? "#4c1d95" : "#ccc",
+                      backgroundColor: videoIsPublished ? "#4c1d95" : "#fff",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      marginRight: 8,
+                    }}>
+                      {videoIsPublished && <Ionicons name="checkmark" size={16} color="#fff" />}
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: "600" }}>Published (visible to kids) *</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Difficulty Modal */}
+                <Modal
+                  visible={showDifficultyModal}
+                  transparent={true}
+                  animationType="fade"
+                  onRequestClose={() => setShowDifficultyModal(false)}
+                >
+                  <TouchableOpacity
+                    style={{ flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", justifyContent: "center", alignItems: "center" }}
+                    activeOpacity={1}
+                    onPress={() => setShowDifficultyModal(false)}
+                  >
+                    <View style={{ backgroundColor: "#FFFFFF", borderRadius: 12, width: "80%", maxWidth: 300 }}>
+                      {["easy", "medium", "hard"].map((level) => (
+                        <TouchableOpacity
+                          key={level}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: 16,
+                            borderBottomWidth: 1,
+                            borderBottomColor: "#E2E8F0",
+                            backgroundColor: videoDifficulty === level ? "#F0FDF4" : "#FFFFFF",
+                          }}
+                          onPress={() => {
+                            setVideoDifficulty(level);
+                            setShowDifficultyModal(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 16, color: videoDifficulty === level ? "#10B981" : "#0F172A", textTransform: "capitalize", fontWeight: videoDifficulty === level ? "600" : "400" }}>
+                            {level}
+                          </Text>
+                          {videoDifficulty === level && (
+                            <Ionicons name="checkmark" size={20} color="#10B981" />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </TouchableOpacity>
+                </Modal>
+
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
                   {editingVideoId ? (
                     <>
                       <TouchableOpacity style={styles.btn} onPress={saveEditVideo}><Text style={styles.btnText}>{i18n.t('save')}</Text></TouchableOpacity>
-                      <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => { setEditingVideoId(null); setVideoTitle(""); setVideoDescription(""); setVideoUri(null); }}>
+                      <TouchableOpacity style={[styles.btn, { backgroundColor: "#ddd" }]} onPress={() => {
+                        setEditingVideoId(null);
+                        setVideoTitle("");
+                        setVideoDescription("");
+                        setVideoUrl("");
+                        setThumbnailUrl("");
+                        setDurationSeconds("");
+                        setVideoDifficulty("easy");
+                        setVideoCollection("");
+                        setVideoTags("");
+                        setVideoIsPublished(true);
+                      }}>
                         <Text>{i18n.t('cancel')}</Text>
                       </TouchableOpacity>
                     </>
@@ -1213,15 +1297,18 @@ useFocusEffect(
                 <View style={styles.emptyBox}><Text style={styles.emptyText}>{i18n.t('noVideosYet')}</Text></View>
               ) : (
                 videos.map((v) => (
-                  <View key={v.id} style={styles.item}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemTitle}>{v.title}</Text>
-                      {v.description ? <Text style={{ color: "#666", marginTop: 4 }}>{v.description}</Text> : null}
-                    </View>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <TouchableOpacity onPress={() => startEditVideo(v.id)}><Ionicons name="pencil" size={20} color="#007AFF" /></TouchableOpacity>
-                      <TouchableOpacity onPress={() => setDetail({ type: "videos", item: v })}><Ionicons name="eye" size={20} color="#333" /></TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteVideo(v.id)}><Ionicons name="trash" size={20} color="red" /></TouchableOpacity>
+                  <View key={v.id} style={{ marginTop: 12 }}>
+                    {renderCard(v, "videos")}
+                    <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 12, marginTop: 8 }}>
+                      <TouchableOpacity onPress={() => startEditVideo(v.id)} style={{ padding: 8 }}>
+                        <Ionicons name="pencil" size={20} color="#007AFF" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setDetail({ type: "videos", item: v })} style={{ padding: 8 }}>
+                        <Ionicons name="eye" size={20} color="#333" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => deleteVideo(v.id)} style={{ padding: 8 }}>
+                        <Ionicons name="trash" size={20} color="red" />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 ))
@@ -1489,10 +1576,6 @@ useFocusEffect(
                 <Text style={styles.cardTitle}>{i18n.t('overallStatistics')}</Text>
                 <View style={styles.statRow}>
                   <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{lessons.length}</Text>
-                    <Text style={styles.statLabel}>Lessons</Text>
-                  </View>
-                  <View style={styles.statBox}>
                     <Text style={styles.statNumber}>{videos.length}</Text>
                     <Text style={styles.statLabel}>{i18n.t('videos')}</Text>
                   </View>
@@ -1512,10 +1595,9 @@ useFocusEffect(
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>📈 {i18n.t('overallCompletionRate')}</Text>
                   {Object.entries(studentProgress).map(([studentId, data]) => {
-                    const lessonsProgress = lessons.length > 0 ? (data.lessonsCompleted?.length || 0) / lessons.length * 100 : 0;
                     const videosProgress = videos.length > 0 ? (data.videosCompleted?.length || 0) / videos.length * 100 : 0;
                     const quizzesProgress = Object.keys(quizzes).length > 0 ? (data.quizResults?.length || 0) / Object.keys(quizzes).length * 100 : 0;
-                    const overallProgress = (lessonsProgress + videosProgress + quizzesProgress) / 3;
+                    const overallProgress = (videosProgress + quizzesProgress) / 2;
                     
                     return (
                       <View key={studentId} style={{ marginTop: 16 }}>
@@ -1527,12 +1609,6 @@ useFocusEffect(
                           <View style={[styles.progressBarFill, { width: `${overallProgress}%` }]} />
                         </View>
                         <View style={{ flexDirection: "row", marginTop: 8, gap: 12 }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.progressLabel}>Lessons: {Math.round(lessonsProgress)}%</Text>
-                            <View style={styles.miniProgressBar}>
-                              <View style={[styles.miniProgressFill, { width: `${lessonsProgress}%`, backgroundColor: "#4c1d95" }]} />
-                            </View>
-                          </View>
                           <View style={{ flex: 1 }}>
                             <Text style={styles.progressLabel}>Videos: {Math.round(videosProgress)}%</Text>
                             <View style={styles.miniProgressBar}>
@@ -1654,8 +1730,7 @@ useFocusEffect(
                 Object.entries(studentProgress).map(([studentId, data]) => (
                   <View key={studentId} style={[styles.card, { paddingVertical: 12 }]}>
                     <Text style={styles.cardTitle}>👤 {data.name || studentId}</Text>
-                    <Text style={{ marginTop: 8 }}>Lessons Completed: {data.lessonsCompleted?.length || 0} / {lessons.length}</Text>
-                    <Text style={{ marginTop: 4 }}>Videos Watched: {data.videosCompleted?.length || 0} / {videos.length}</Text>
+                    <Text style={{ marginTop: 8 }}>Videos Watched: {data.videosCompleted?.length || 0} / {videos.length}</Text>
                     <Text style={{ marginTop: 4 }}>Quizzes Completed: {data.quizResults?.length || 0} / {Object.keys(quizzes).length}</Text>
                     {data.quizResults && data.quizResults.length > 0 && (
                       <View style={{ marginTop: 12 }}>
@@ -1685,40 +1760,95 @@ useFocusEffect(
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8FAFC" }, // Professional light gray background
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    height: 90,
+  topBar: {
     paddingHorizontal: 20,
+    paddingVertical: 12,
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0", // Subtle border
+    borderBottomColor: "#E2E8F0",
+  },
+  profileAvatar: { 
+    width: 40, 
+    height: 40, 
+    borderRadius: 20, 
+    borderWidth: 2, 
+    borderColor: "#E2E8F0" 
+  },
+  avatarEditBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#2563EB",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  profileSection: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+    alignItems: "center",
     shadowColor: "#000",
     shadowOpacity: 0.03,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 2,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
-  profilePhoto: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: "#E2E8F0" },
-  headerHi: { color: "#64748B", fontWeight: "400", fontSize: 12, letterSpacing: 0.4 }, // Professional gray
-  headerName: { fontSize: 18, fontWeight: "600", color: "#0F172A", letterSpacing: 0.3 }, // Professional dark
-  headerText: { fontSize: 22, fontWeight: "700", color: "#1E293B", letterSpacing: 0.3 },
-  profileBtn: {
-    padding: 6,
-    borderRadius: 8,
+  largeAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    borderColor: "#E2E8F0",
+    marginBottom: 12,
   },
-  logoutBtn: {
-    backgroundColor: "#EF4444",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    shadowColor: "#EF4444",
-    shadowOpacity: 0.2,
+  editAvatarButton: {
+    position: "absolute",
+    bottom: 8,
+    right: "50%",
+    marginRight: -20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#2563EB",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    shadowColor: "#2563EB",
+    shadowOpacity: 0.3,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 4,
   },
-  logoutText: { color: "#fff", fontWeight: "600", fontSize: 13, letterSpacing: 0.2 },
+  profileName: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginTop: 8,
+    letterSpacing: 0.3,
+  },
+  profileRole: {
+    fontSize: 14,
+    color: "#64748B",
+    marginTop: 4,
+    fontWeight: "500",
+  },
   contentScroll: { padding: 16, flexGrow: 1, paddingBottom: 36 },
   gridRow: {
     flexDirection: "row",
