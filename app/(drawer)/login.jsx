@@ -337,20 +337,6 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
-      };
-
-      login(mockUser);
-      await AsyncStorage.setItem("role", mockUser.role);
-      await AsyncStorage.setItem("user", JSON.stringify(mockUser));
-
-      setLoading(false);
-      router.replace(roleRouteMap[mockUser.role] || roleRouteMap[role]);
-    } catch (error) {
-      console.error("Mock signup error:", error);
-      setError(t("registrationFailed") || "An error occurred. Please try again.");
-      setLoading(false);
-    }
-  };
   const handleForgotPassword = () => {
     if (!email) {
       setError("Please enter your email");
