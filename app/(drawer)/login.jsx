@@ -1,23 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
 import {View,Text,TextInput,TouchableOpacity,ScrollView,StyleSheet, Dimensions,Image,Animated, KeyboardAvoidingView, Platform, Alert, Easing,} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import api from "../../src/api";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useUser } from "../../contexts/UserContext";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "../../contexts/ThemeContext";
+import * as profilesApi from "../../src/services/profilesApi";
 const { width, height } = Dimensions.get("window");
-// Mock users for demo (in production, this would be from a backend)
-const mockUsers = {
-  parent: [
-    { id: "p1", name: "John Doe", email: "parent@test.com", password: "123456", role: "parent" },
-  ],
-  teacher: [
-    { id: "t1", name: "Ms. Johnson", email: "teacher@test.com", password: "123456", role: "teacher" },
-  ],
-};
+// NOTE: Authentication now uses the backend profiles/auth endpoints
 // Animated floating emoji component
 const FloatingEmoji = ({ emoji, delay = 0 }) => {
   const translateY = useRef(new Animated.Value(0)).current;
@@ -232,58 +224,56 @@ export default function LoginPage() {
   }, [role, authMode]);
   const handleSignIn = async () => {
     setError("");
-  
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPassword = password.trim();
-  
-    if (!cleanEmail || !cleanPassword) {
-      setError(t("fillAllFields"));
-      return;
-    }
     setLoading(true);
-  
+
     try {
-      await new Promise((r) => setTimeout(r, 800));
-      const storedUsers = await AsyncStorage.getItem("@app_users");
-      let allUsers = mockUsers;
-      if (storedUsers) {
-        try {
-          const parsed = JSON.parse(storedUsers);
-          allUsers = {
-            parent: [...mockUsers.parent, ...(parsed.parent || [])],
-            teacher: [...mockUsers.teacher, ...(parsed.teacher || [])],
-          };
-        } catch (e) {
-          console.warn("Error parsing stored users:", e);
-        }
+      const userEmail = email?.trim();
+      const userPassword = password?.trim();
+
+      if (!userEmail || !userPassword) {
+        setError(t("fillAllFields"));
+        setLoading(false);
+        return;
       }
-      const user = (allUsers[role] || []).find(
-        (u) =>
-          u.email.trim().toLowerCase() === cleanEmail &&
-          u.password === cleanPassword
-      );
-      if (user) {
-        const { password: _, ...safeUser } = user;
-        login(safeUser);
-        await AsyncStorage.setItem("role", role);
-        await AsyncStorage.setItem("user", JSON.stringify(safeUser));
+
+      // Use backend API for authentication
+      const credentials = {
+        email: userEmail,
+        password: userPassword,
+        role: role, // Include role in credentials
+      };
+
+      const response = await profilesApi.login(credentials);
+      
+      // Response should contain: { access, refresh, user }
+      if (response.user) {
+        // Update user context with backend user data
+        login(response.user);
+        await AsyncStorage.setItem("role", response.user.role || role);
+        
         setLoading(false);
-        setTimeout(() => {
-          router.replace(roleRouteMap[role]);
-        }, 100);
+        router.replace(roleRouteMap[response.user.role || role] || roleRouteMap[role]);
       } else {
-        setError(t("invalidCredentials"));
-        setLoading(false);
+        throw new Error("Invalid response from server");
       }
     } catch (error) {
       console.error("Login error:", error);
-      setError("An error occurred. Please try again.");
+      // Handle different error types
+      if (error.response?.status === 401) {
+        setError(t("invalidCredentials") || "Invalid email or password");
+      } else if (error.response?.status === 400) {
+        setError(error.response.data?.message || t("invalidCredentials"));
+      } else if (error.message) {
+        setError(error.message);
+      } else {
+        setError(t("invalidCredentials") || "Login failed. Please try again.");
+      }
       setLoading(false);
     }
   };
   const handleSignUp = async () => {
     setError("");
-    // Both parent and teacher need name, email, and password
+
     if (!name || !email || !password) {
       setError(t("fillAllFields"));
       return;
@@ -298,48 +288,66 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
 
     try {
-      const newUser = {
-        id: String(Date.now()),
-        name,
-        email,
-        role,
+      const userEmail = email.trim();
+
+      // Use backend API for registration
+      const registerPayload = {
+        name: name.trim(),
+        email: userEmail,
+        password: password,
+        role: role,
       };
-      // Save to storage
-      const storedUsers = await AsyncStorage.getItem("@app_users");
-      let allUsers = { parent: [], teacher: [] };
+
+      const response = await profilesApi.register(registerPayload);
       
-      if (storedUsers) {
-        try {
-          allUsers = JSON.parse(storedUsers);
-        } catch (e) {
-          console.warn("Error parsing stored users:", e);
+      // After successful registration, automatically log in
+      if (response.user || response.id) {
+        // Try to login with the new credentials
+        const loginResponse = await profilesApi.login({
+          email: userEmail,
+          password: password,
+          role: role,
+        });
+
+        if (loginResponse.user) {
+          login(loginResponse.user);
+          await AsyncStorage.setItem("role", loginResponse.user.role || role);
+          
+          setLoading(false);
+          router.replace(roleRouteMap[loginResponse.user.role || role] || roleRouteMap[role]);
+        } else {
+          throw new Error("Registration successful but login failed");
         }
+      } else {
+        throw new Error("Registration failed");
       }
-      if (!allUsers[role]) allUsers[role] = [];
-      // Check if email already exists
-      const emailExists = allUsers[role].some((u) => u.email === email);
-      if (emailExists) {
-        setError("Email already registered. Please sign in instead.");
-        setLoading(false);
-        return;
-      }
-      allUsers[role].push({ ...newUser, password });
-      await AsyncStorage.setItem("@app_users", JSON.stringify(allUsers));
-      // Remove password before storing in context
-      const { password: _, ...userWithoutPassword } = { ...newUser, password };
-      login(userWithoutPassword);
-      await AsyncStorage.setItem("role", role);
-      await AsyncStorage.setItem("user", JSON.stringify(userWithoutPassword));
-      setLoading(false);
-      setTimeout(() => {
-        router.replace(roleRouteMap[role]);
-      }, 100);
     } catch (error) {
       console.error("Signup error:", error);
-      setError("An error occurred. Please try again.");
+      if (error.response?.status === 400) {
+        setError(error.response.data?.message || error.response.data?.email?.[0] || t("registrationFailed"));
+      } else if (error.response?.status === 409) {
+        setError(t("emailAlreadyExists") || "Email already exists");
+      } else if (error.message) {
+        setError(error.message);
+      } else {
+        setError(t("registrationFailed") || "Registration failed. Please try again.");
+      }
+      setLoading(false);
+    }
+  };
+      };
+
+      login(mockUser);
+      await AsyncStorage.setItem("role", mockUser.role);
+      await AsyncStorage.setItem("user", JSON.stringify(mockUser));
+
+      setLoading(false);
+      router.replace(roleRouteMap[mockUser.role] || roleRouteMap[role]);
+    } catch (error) {
+      console.error("Mock signup error:", error);
+      setError(t("registrationFailed") || "An error occurred. Please try again.");
       setLoading(false);
     }
   };

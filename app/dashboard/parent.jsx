@@ -1,19 +1,6 @@
 // Parent Dashboard
 import React, { useEffect, useState, useRef } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  Image,
-  Animated,
-  Platform,
-  KeyboardAvoidingView,
-  Modal,
+import {View,Text,TextInput,TouchableOpacity,ScrollView,StyleSheet,Alert,ActivityIndicator,Image,Animated,Platform,KeyboardAvoidingView,Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -24,7 +11,7 @@ import * as ImagePicker from "expo-image-picker";
 import i18n from "../../i18n";
 import { useLanguage } from "../../contexts/LanguageContext";
 import { useUser } from "../../contexts/UserContext";
-
+import * as profilesApi from "../../src/services/profilesApi";
 const STORAGE = {
   CHILDREN: "@app_children_v1", // { parentId: [child1, child2, ...] }
   STUDENT_PROGRESS: "@app_student_progress_v1", // { childId: { videosCompleted, videoWatchingDetails, quizResults } }
@@ -76,26 +63,58 @@ export default function ParentDashboard() {
         return;
       }
 
-      const [storedChildren, storedProgress] = await Promise.all([
-        AsyncStorage.getItem(STORAGE.CHILDREN),
-        AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS),
-      ]);
+      // Load children from backend API
+      try {
+        const response = await profilesApi.getChildren({ parent: user.id });
+        
+        // Handle different response formats
+        let childrenList = [];
+        if (Array.isArray(response)) {
+          childrenList = response;
+        } else if (response.results && Array.isArray(response.results)) {
+          childrenList = response.results;
+        } else if (response.data && Array.isArray(response.data)) {
+          childrenList = response.data;
+        }
+        
+        setChildren(childrenList);
 
-      if (storedChildren) {
-        const allChildren = JSON.parse(storedChildren);
-        // Filter children for current parent
-        const parentChildren = allChildren[user.id] || [];
-        setChildren(parentChildren);
-      } else {
-        setChildren([]);
-      }
-
-      // Load progress for all children
-      if (storedProgress) {
-        const allProgress = JSON.parse(storedProgress);
+        // Load progress for all children from backend
+        const progressPromises = childrenList.map(async (child) => {
+          try {
+            const progressData = await profilesApi.getChildProgress(child.id);
+            return { [child.id]: progressData };
+          } catch (e) {
+            console.warn(`Failed to load progress for child ${child.id}:`, e);
+            return { [child.id]: {} };
+          }
+        });
+        
+        const progressResults = await Promise.all(progressPromises);
+        const allProgress = progressResults.reduce((acc, curr) => ({ ...acc, ...curr }), {});
         setChildProgress(allProgress);
-      } else {
-        setChildProgress({});
+      } catch (apiError) {
+        console.warn("Failed to load children from backend, falling back to local storage:", apiError);
+        // Fallback to local storage
+        const [storedChildren, storedProgress] = await Promise.all([
+          AsyncStorage.getItem(STORAGE.CHILDREN),
+          AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS),
+        ]);
+
+        if (storedChildren) {
+          const allChildren = JSON.parse(storedChildren);
+          const parentChildren = allChildren[user.id] || [];
+          setChildren(parentChildren);
+        } else {
+          setChildren([]);
+        }
+
+        if (storedProgress) {
+          const allProgress = JSON.parse(storedProgress);
+          setChildProgress(allProgress);
+        } else {
+          setChildProgress({});
+        }
       }
     } catch (e) {
       console.warn("Failed to load children", e);
@@ -112,14 +131,12 @@ export default function ParentDashboard() {
         throw new Error("User ID is missing. Please log in again.");
       }
 
-      const stored = await AsyncStorage.getItem(STORAGE.CHILDREN);
-      let allChildren = stored ? JSON.parse(stored) : {};
-      allChildren[user.id] = childrenList;
-      await AsyncStorage.setItem(STORAGE.CHILDREN, JSON.stringify(allChildren));
+      // Note: This function is kept for backward compatibility
+      // Individual child operations now use backend API directly
       setChildren(childrenList);
     } catch (e) {
       console.warn("Failed to save children", e);
-      throw e; // Re-throw so the calling function can handle it
+      throw e;
     }
   };
 
@@ -163,17 +180,20 @@ export default function ParentDashboard() {
         return;
       }
 
-      const newChild = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9), // UUID-like (backend will generate actual UUID)
+      // Create child via backend API
+      const childPayload = {
         nickname: childNickname.trim(),
-        avatarUrl: childAvatarUri || null, // Optional field - stores URI locally
         age: age,
-        parentPhone: childParentPhone.trim(),
-        learningLevel: childLearningLevel,
+        parent_phone: childParentPhone.trim(),
+        learning_level: childLearningLevel,
+        // Note: avatarUrl will need to be handled separately if backend supports file uploads
       };
 
-      const updated = [...children, newChild];
-      await saveChildren(updated);
+      const createdChild = await profilesApi.createChild(childPayload);
+      
+      // Update local state with the created child (backend returns full child object)
+      const updated = [...children, createdChild];
+      setChildren(updated);
       
       Alert.alert(i18n.t("success"), i18n.t("childAddedSuccessfully"));
       
@@ -216,20 +236,22 @@ export default function ParentDashboard() {
         return;
       }
 
-      const updated = children.map((child) =>
-        child.id === editingChildId
-          ? {
-              ...child,
-              nickname: childNickname.trim(),
-              avatarUrl: childAvatarUri || null,
-              age: age,
-              parentPhone: childParentPhone.trim(),
-              learningLevel: childLearningLevel,
-            }
-          : child
-      );
+      // Update child via backend API
+      const updatePayload = {
+        nickname: childNickname.trim(),
+        age: age,
+        parent_phone: childParentPhone.trim(),
+        learning_level: childLearningLevel,
+      };
 
-      await saveChildren(updated);
+      const updatedChild = await profilesApi.updateChild(editingChildId, updatePayload);
+      
+      // Update local state
+      const updated = children.map((child) =>
+        child.id === editingChildId ? updatedChild : child
+      );
+      setChildren(updated);
+      
       Alert.alert(i18n.t("success"), i18n.t("childUpdatedSuccessfully"));
       
       // Reset form
@@ -259,9 +281,19 @@ export default function ParentDashboard() {
           text: i18n.t("delete"),
           style: "destructive",
           onPress: async () => {
-            const updated = children.filter((child) => child.id !== childId);
-            await saveChildren(updated);
-            Alert.alert(i18n.t("success"), i18n.t("childDeletedSuccessfully"));
+            try {
+              // Delete child via backend API
+              await profilesApi.deleteChild(childId);
+              
+              // Update local state
+              const updated = children.filter((child) => child.id !== childId);
+              setChildren(updated);
+              
+              Alert.alert(i18n.t("success"), i18n.t("childDeletedSuccessfully"));
+            } catch (error) {
+              console.error("Failed to delete child:", error);
+              Alert.alert(i18n.t("error"), i18n.t("failedToDeleteChild") || "Failed to delete child. Please try again.");
+            }
           },
         },
       ]
@@ -380,88 +412,176 @@ export default function ParentDashboard() {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: "#F0FDF4",
+      backgroundColor: "#F8FAFC",
     },
-    header: {
-      backgroundColor: "#10B981",
-      paddingVertical: 20,
-      paddingHorizontal: 20,
-      paddingTop: Platform.OS === "android" ? 20 : 60,
-      borderBottomLeftRadius: 20,
-      borderBottomRightRadius: 20,
+    floatingActions: {
+      position: "absolute",
+      top: Platform.OS === "ios" ? 50 : 20,
+      left: 20,
+      zIndex: 1000,
       ...Platform.select({
         ios: {
           shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.15,
           shadowRadius: 8,
         },
         android: {
-          elevation: 4,
+          elevation: 8,
         },
       }),
     },
-    headerContent: {
-      flexDirection: "row",
+    floatingBackButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: "#10B981",
+      justifyContent: "center",
       alignItems: "center",
-      justifyContent: "space-between",
     },
-    logoutButton: {
-      padding: 8,
-      borderRadius: 8,
-      backgroundColor: "rgba(255, 255, 255, 0.2)",
+    floatingLogoutButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: "#EF4444",
+      justifyContent: "center",
+      alignItems: "center",
     },
-    headerTitle: {
-      fontSize: 24,
-      fontWeight: "bold",
-      color: "#FFFFFF",
+    welcomeSection: {
+      marginTop: Platform.OS === "ios" ? 20 : 10,
+      marginBottom: 24,
+      paddingBottom: 20,
     },
-    headerSubtitle: {
-      fontSize: 14,
-      color: "#D1FAE5",
-      marginTop: 4,
+    welcomeTitle: {
+      fontSize: 32,
+      fontWeight: "800",
+      color: "#0F172A",
+      letterSpacing: -0.5,
+      marginBottom: 8,
+    },
+    welcomeSubtitle: {
+      fontSize: 16,
+      color: "#64748B",
+      fontWeight: "500",
+      lineHeight: 24,
     },
     content: {
       flex: 1,
       padding: 20,
     },
     sectionTitle: {
-      fontSize: 20,
-      fontWeight: "bold",
+      fontSize: 22,
+      fontWeight: "700",
       color: "#0F172A",
-      marginBottom: 16,
+      marginBottom: 20,
+      letterSpacing: 0.2,
     },
     addButton: {
       backgroundColor: "#10B981",
-      padding: 16,
-      borderRadius: 12,
+      padding: 18,
+      borderRadius: 16,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      marginBottom: 20,
+      marginBottom: 24,
+      ...Platform.select({
+        ios: {
+          shadowColor: "#10B981",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 8,
+        },
+        android: {
+          elevation: 6,
+        },
+      }),
+    },
+    addButtonText: {
+      color: "#FFFFFF",
+      fontSize: 17,
+      fontWeight: "700",
+      marginLeft: 10,
+      letterSpacing: 0.3,
+    },
+    childCard: {
+      backgroundColor: "#FFFFFF",
+      borderRadius: 16,
+      padding: 20,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: "#E2E8F0",
       ...Platform.select({
         ios: {
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
         },
         android: {
           elevation: 3,
         },
       }),
     },
-    addButtonText: {
-      color: "#FFFFFF",
-      fontSize: 16,
-      fontWeight: "600",
-      marginLeft: 8,
-    },
-    childCard: {
-      backgroundColor: "#FFFFFF",
-      borderRadius: 12,
-      padding: 16,
+    childCardHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 16,
       marginBottom: 12,
+    },
+    childAvatar: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      borderWidth: 2,
+      borderColor: "#E2E8F0",
+    },
+    childAvatarPlaceholder: {
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#F1F5F9",
+    },
+    childName: {
+      fontSize: 20,
+      fontWeight: "700",
+      color: "#0F172A",
+      marginBottom: 8,
+      letterSpacing: 0.2,
+    },
+    progressIcons: {
+      flexDirection: "row",
+      gap: 20,
+      alignItems: "center",
+    },
+    progressIconItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: "#F8FAFC",
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+    },
+    progressIconText: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#475569",
+    },
+    childInfo: {
+      fontSize: 14,
+      color: "#64748B",
+      marginBottom: 4,
+    },
+    childActions: {
+      flexDirection: "row",
+      marginTop: 16,
+      gap: 10,
+    },
+    actionButton: {
+      flex: 1,
+      padding: 12,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
       ...Platform.select({
         ios: {
           shadowColor: "#000",
@@ -473,59 +593,6 @@ export default function ParentDashboard() {
           elevation: 2,
         },
       }),
-    },
-    childCardHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      marginBottom: 8,
-    },
-    childAvatar: {
-      width: 50,
-      height: 50,
-      borderRadius: 25,
-    },
-    childAvatarPlaceholder: {
-      justifyContent: "center",
-      alignItems: "center",
-      backgroundColor: "#F1F5F9",
-    },
-    childName: {
-      fontSize: 18,
-      fontWeight: "bold",
-      color: "#0F172A",
-      marginBottom: 6,
-    },
-    progressIcons: {
-      flexDirection: "row",
-      gap: 16,
-      alignItems: "center",
-    },
-    progressIconItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-    },
-    progressIconText: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: "#64748B",
-    },
-    childInfo: {
-      fontSize: 14,
-      color: "#64748B",
-      marginBottom: 4,
-    },
-    childActions: {
-      flexDirection: "row",
-      marginTop: 12,
-      gap: 8,
-    },
-    actionButton: {
-      flex: 1,
-      padding: 10,
-      borderRadius: 8,
-      alignItems: "center",
     },
     editButton: {
       backgroundColor: "#3B82F6",
@@ -538,66 +605,83 @@ export default function ParentDashboard() {
     },
     actionButtonText: {
       color: "#FFFFFF",
-      fontSize: 14,
-      fontWeight: "600",
+      fontSize: 13,
+      fontWeight: "700",
+      letterSpacing: 0.2,
     },
     formContainer: {
       backgroundColor: "#FFFFFF",
-      borderRadius: 12,
-      padding: 20,
+      borderRadius: 20,
+      padding: 24,
+      borderWidth: 1,
+      borderColor: "#E2E8F0",
       ...Platform.select({
         ios: {
           shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
+          shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.1,
-          shadowRadius: 4,
+          shadowRadius: 12,
         },
         android: {
-          elevation: 2,
+          elevation: 4,
         },
       }),
     },
     input: {
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: "#E2E8F0",
-      borderRadius: 8,
-      padding: 12,
+      borderRadius: 12,
+      padding: 14,
       fontSize: 16,
-      marginBottom: 16,
-      backgroundColor: "#FFFFFF",
+      marginBottom: 18,
+      backgroundColor: "#F8FAFC",
+      color: "#0F172A",
     },
     label: {
-      fontSize: 14,
+      fontSize: 15,
       fontWeight: "600",
       color: "#0F172A",
-      marginBottom: 8,
+      marginBottom: 10,
+      letterSpacing: 0.2,
     },
     avatarPickerContainer: {
-      marginBottom: 16,
+      marginBottom: 20,
       alignItems: "center",
     },
     avatarPreview: {
-      width: 120,
-      height: 120,
-      borderRadius: 60,
-      borderWidth: 2,
-      borderColor: "#E2E8F0",
+      width: 130,
+      height: 130,
+      borderRadius: 65,
+      borderWidth: 3,
+      borderColor: "#10B981",
+      ...Platform.select({
+        ios: {
+          shadowColor: "#10B981",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.2,
+          shadowRadius: 8,
+        },
+        android: {
+          elevation: 4,
+        },
+      }),
     },
     avatarPlaceholder: {
-      width: 120,
-      height: 120,
-      borderRadius: 60,
+      width: 130,
+      height: 130,
+      borderRadius: 65,
       backgroundColor: "#F1F5F9",
-      borderWidth: 2,
-      borderColor: "#E2E8F0",
+      borderWidth: 3,
+      borderColor: "#CBD5E1",
       borderStyle: "dashed",
       justifyContent: "center",
       alignItems: "center",
     },
     avatarPlaceholderText: {
-      marginTop: 8,
+      marginTop: 10,
       fontSize: 14,
       color: "#64748B",
+      fontWeight: "500",
     },
     removeAvatarButton: {
       marginTop: -10,
@@ -613,16 +697,17 @@ export default function ParentDashboard() {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: "#E2E8F0",
-      borderRadius: 8,
-      padding: 12,
-      marginBottom: 16,
-      backgroundColor: "#FFFFFF",
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 18,
+      backgroundColor: "#F8FAFC",
     },
     dropdownButtonText: {
       fontSize: 16,
       color: "#0F172A",
+      fontWeight: "500",
     },
     modalOverlay: {
       flex: 1,
@@ -632,18 +717,19 @@ export default function ParentDashboard() {
     },
     dropdownModal: {
       backgroundColor: "#FFFFFF",
-      borderRadius: 12,
+      borderRadius: 20,
       width: "80%",
       maxWidth: 300,
+      overflow: "hidden",
       ...Platform.select({
         ios: {
           shadowColor: "#000",
-          shadowOffset: { width: 0, height: 4 },
+          shadowOffset: { width: 0, height: 8 },
           shadowOpacity: 0.3,
-          shadowRadius: 8,
+          shadowRadius: 16,
         },
         android: {
-          elevation: 8,
+          elevation: 12,
         },
       }),
     },
@@ -651,9 +737,9 @@ export default function ParentDashboard() {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      padding: 16,
+      padding: 18,
       borderBottomWidth: 1,
-      borderBottomColor: "#E2E8F0",
+      borderBottomColor: "#F1F5F9",
     },
     dropdownOptionSelected: {
       backgroundColor: "#F0FDF4",
@@ -661,10 +747,11 @@ export default function ParentDashboard() {
     dropdownOptionText: {
       fontSize: 16,
       color: "#0F172A",
+      fontWeight: "500",
     },
     dropdownOptionTextSelected: {
       color: "#10B981",
-      fontWeight: "600",
+      fontWeight: "700",
     },
     formButtons: {
       flexDirection: "row",
@@ -675,23 +762,23 @@ export default function ParentDashboard() {
     },
     submitButton: {
       backgroundColor: "#10B981",
-      padding: 16,
-      borderRadius: 8,
+      padding: 18,
+      borderRadius: 14,
       alignItems: "center",
       flex: 1,
       flexDirection: "row",
       justifyContent: "center",
-      gap: 8,
-      minHeight: 50,
+      gap: 10,
+      minHeight: 54,
       ...Platform.select({
         ios: {
           shadowColor: "#10B981",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.2,
-          shadowRadius: 4,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
         },
         android: {
-          elevation: 3,
+          elevation: 6,
         },
       }),
     },
@@ -700,50 +787,58 @@ export default function ParentDashboard() {
     },
     submitButtonText: {
       color: "#FFFFFF",
-      fontSize: 16,
-      fontWeight: "600",
+      fontSize: 17,
+      fontWeight: "700",
+      letterSpacing: 0.3,
     },
     cancelButton: {
-      padding: 16,
-      borderRadius: 8,
+      padding: 18,
+      borderRadius: 14,
       alignItems: "center",
       flex: 1,
     },
     cancelButtonStyled: {
       backgroundColor: "#F1F5F9",
-      borderWidth: 1,
+      borderWidth: 1.5,
       borderColor: "#E2E8F0",
       flexDirection: "row",
       justifyContent: "center",
-      gap: 8,
-      minHeight: 50,
+      gap: 10,
+      minHeight: 54,
     },
     cancelButtonText: {
       color: "#64748B",
-      fontSize: 16,
-      fontWeight: "600",
+      fontSize: 17,
+      fontWeight: "700",
+      letterSpacing: 0.3,
     },
     emptyState: {
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 60,
+      paddingVertical: 80,
+      paddingHorizontal: 40,
     },
     emptyStateText: {
       fontSize: 16,
       color: "#64748B",
       textAlign: "center",
-      marginTop: 16,
+      marginTop: 20,
+      fontWeight: "500",
+      lineHeight: 24,
     },
     backButton: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 20,
+      marginBottom: 24,
+      padding: 8,
+      alignSelf: "flex-start",
     },
     backButtonText: {
-      fontSize: 16,
+      fontSize: 17,
       color: "#10B981",
-      marginLeft: 8,
-      fontWeight: "600",
+      marginLeft: 10,
+      fontWeight: "700",
+      letterSpacing: 0.2,
     },
   });
 
@@ -758,14 +853,22 @@ export default function ParentDashboard() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={{ flex: 1 }} />
+      {/* Floating Back Button */}
+      <View style={styles.floatingActions}>
         <TouchableOpacity
-          onPress={handleLogout}
-          style={styles.logoutButton}
-          accessibilityLabel="Logout"
+          onPress={() => {
+            // Try to go back, if fails, navigate to login
+            try {
+              router.back();
+            } catch (e) {
+              // If back navigation fails, go to login
+              router.replace("/login");
+            }
+          }}
+          style={styles.floatingBackButton}
+          accessibilityLabel="Go back"
         >
-          <Ionicons name="log-out-outline" size={24} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -782,6 +885,12 @@ export default function ParentDashboard() {
         >
           {selectedSection === "dashboard" && (
             <>
+              {/* Welcome Section */}
+              <View style={styles.welcomeSection}>
+                <Text style={styles.welcomeTitle}>{i18n.t("parentDashboard") || "Parent Dashboard"}</Text>
+                <Text style={styles.welcomeSubtitle}>{i18n.t("manageChildren") || "Manage your children's learning"}</Text>
+              </View>
+
               <TouchableOpacity
                 style={styles.addButton}
                 onPress={() => {

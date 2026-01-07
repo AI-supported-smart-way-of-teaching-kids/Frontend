@@ -279,7 +279,8 @@ export default function Index() {
   };
 
   const handlePress = () => {
-    router.push("/login");
+    // Navigate to the Login screen within the drawer navigation
+    router.push("/(drawer)/login");
   };
 
   // Flower component - follows touch smoothly
@@ -497,9 +498,13 @@ export default function Index() {
           width: "100%",
           paddingHorizontal: Math.round(SCREEN_WIDTH * 0.08 * spacingMultiplier),
           paddingVertical: Math.round(SCREEN_HEIGHT * 0.05 * spacingMultiplier),
+          // Add extra top padding so the header/logo area doesn't overlap the text
+          paddingTop: Math.round(SCREEN_HEIGHT * 0.12 * spacingMultiplier),
           ...(isLandscape && {
             flexDirection: "row",
             gap: SCREEN_WIDTH * 0.05,
+            // In landscape, reduce extra top padding
+            paddingTop: Math.round(SCREEN_HEIGHT * 0.04 * spacingMultiplier),
           }),
         },
         contentVertical: {

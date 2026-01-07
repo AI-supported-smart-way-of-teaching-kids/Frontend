@@ -17,19 +17,28 @@ export default function DrawerLayout(props) {
           <DrawerItemList {...drawerProps} />
         </View>
       )}
-      screenOptions={({ route }) => ({
-        headerShown: !["dashboard/kids", "dashboard/parent", "dashboard/teacher"].includes(route.name),
-        
-        // --- THIS SECTION HIDES THE TOP TEXT ---
-        headerTitle: "",           // Hides text from the top bar
-        headerTransparent: true,   // Makes the bar see-through
-        headerTintColor: "#000",   // Color of the burger icon
-        // ---------------------------------------
+      screenOptions={({ route }) => {
+        const isDashboardScreen = route.name?.startsWith("dashboard/");
 
-        drawerActiveTintColor: "#2f322fff",
-        drawerInactiveTintColor: "#333",
-        drawerLabelStyle: { fontSize: 16, fontWeight: "500" },
-      })}
+        return {
+          // Hide native header for all dashboard screens (kids, parent, teacher, etc.)
+          headerShown: !isDashboardScreen,
+
+          // Clean, minimal header for non-dashboard screens
+          headerTitle: "",
+          headerTransparent: true,
+          headerTintColor: "#000",
+          headerStyle: {
+            backgroundColor: "transparent",
+            elevation: 0,
+            shadowOpacity: 0,
+          },
+
+          drawerActiveTintColor: "#2f322fff",
+          drawerInactiveTintColor: "#333",
+          drawerLabelStyle: { fontSize: 16, fontWeight: "500" },
+        };
+      }}
     >
       <Drawer.Screen
         name="index"

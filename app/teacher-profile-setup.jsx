@@ -36,7 +36,7 @@ export default function TeacherProfileSetup() {
 
     if (!user || user.role !== "teacher") {
       Alert.alert("Error", "You must be logged in as a teacher to create a profile.");
-      router.replace("/(drawer)/login");
+      router.replace("/(drawer)/(tabs)/login");
       return;
     }
 

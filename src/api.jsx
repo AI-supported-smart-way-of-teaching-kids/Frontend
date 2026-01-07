@@ -2,7 +2,10 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Replace with your Django server
-const BASE_URL = "http://YOUR_DJANGO_IP:8000/api";
+// For development: use your local IP (e.g., "http://192.168.1.100:8000/api")
+// For production: use your production server URL
+// You can also set this via environment variables
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000/api";
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -32,7 +35,8 @@ api.interceptors.response.use(
       }
 
       try {
-        const res = await axios.post(`${BASE_URL}/auth/refresh`, {
+        // Use the profiles auth refresh endpoint
+        const res = await axios.post(`${BASE_URL}/profiles/auth/refresh/`, {
           refresh: refresh,
         });
 
