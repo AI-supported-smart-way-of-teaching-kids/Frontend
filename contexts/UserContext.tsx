@@ -34,7 +34,6 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const AsyncStorage = require("@react-native-async-storage/async-storage").default;
         const storedUser = await AsyncStorage.getItem("user");
         const storedRole = await AsyncStorage.getItem("role");
         if (storedUser && storedRole) {

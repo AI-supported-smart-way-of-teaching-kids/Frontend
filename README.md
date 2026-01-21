@@ -72,6 +72,30 @@ An AI-supported smart way of teaching, designed for kids, parents, and teachers.
 - Use `npm run lint` to run ESLint
 - Reset the project with `npm run reset-project` (moves starter code to app-example)
 
+## Deployment
+
+### 1. Web Deployment (Recommended)
+Export the app as a static website to host on platforms like Vercel, Netlify, or AWS S3.
+```bash
+npx expo export --platform web
+```
+This will create a `dist` directory with your production-ready web files.
+
+### 2. Mobile Deployment (EAS Build)
+To build native binaries for Android or iOS, use Expo Application Services (EAS):
+1. Install EAS CLI: `npm install -g eas-cli`
+2. Log in: `eas login`
+3. Configure project: `eas build:configure`
+4. Build for Android: `eas build --platform android`
+5. Build for iOS: `eas build --platform ios`
+
+### 3. Docker Deployment
+Use the included Docker configuration for containerized deployment:
+```bash
+docker-compose up -d
+```
+The web version will be accessible via port 19006.
+
 ## Contributing
 
 This project is developed by Mekelle University Software Engineering students (October 2024).

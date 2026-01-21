@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import {View,Text,TextInput,TouchableOpacity,ScrollView,StyleSheet, Dimensions,Image,Animated, KeyboardAvoidingView, Platform, Alert, Easing,} from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Dimensions, Image, Animated, KeyboardAvoidingView, Platform, Alert, Easing, } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -10,63 +10,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import * as profilesApi from "../../src/services/profilesApi";
 const { width, height } = Dimensions.get("window");
 // NOTE: Authentication now uses the backend profiles/auth endpoints
-// Animated floating emoji component
-const FloatingEmoji = ({ emoji, delay = 0 }) => {
-  const translateY = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0.3)).current;
-  useEffect(() => {
-    const animate = () => {
-      Animated.parallel([
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(translateY, {
-              toValue: -20,
-              duration: 2000,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-              delay,
-            }),
-            Animated.timing(translateY, {
-              toValue: 0,
-              duration: 2000,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-          ])
-        ),
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(opacity, {
-              toValue: 0.8,
-              duration: 1500,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-              delay,
-            }),
-            Animated.timing(opacity, {
-              toValue: 0.3,
-              duration: 1500,
-              easing: Easing.inOut(Easing.sin),
-              useNativeDriver: true,
-            }),
-          ])
-        ),
-      ]).start();
-    };
-    animate();
-  }, []);
-  return (
-    <Animated.View
-      style={{
-        position: "absolute",
-        transform: [{ translateY }],
-        opacity,
-      }}
-    >
-      <Text style={{ fontSize: 30 }}>{emoji}</Text>
-    </Animated.View>
-  );
-};
+
 
 // Enhanced Button with role-specific styling
 function CartoonButton({ title, onPress, loading, colors, textColor = "#fff", role = "parent" }) {
@@ -186,7 +130,7 @@ export default function LoginPage() {
         ])
       ).start();
     }
-  }, [role, logoAnim, pulseAnim]);
+  }, [role, logoAnim, pulseAnim, t]);
   const roleIcons = { parent: "people", teacher: "school" };
   // Professional colors for teacher and parent
   const roleColors = {
@@ -244,13 +188,13 @@ export default function LoginPage() {
       };
 
       const response = await profilesApi.login(credentials);
-      
+
       // Response should contain: { access, refresh, user }
       if (response.user) {
         // Update user context with backend user data
         login(response.user);
         await AsyncStorage.setItem("role", response.user.role || role);
-        
+
         setLoading(false);
         router.replace(roleRouteMap[response.user.role || role] || roleRouteMap[role]);
       } else {
@@ -291,19 +235,30 @@ export default function LoginPage() {
 
     try {
       const userEmail = email.trim();
+      const trimmedName = name.trim();
 
       // Use backend API for registration
+      // Try to split name into first_name and last_name if it contains a space
+      // Otherwise, use the full name as first_name
+      const nameParts = trimmedName.split(/\s+/);
+      const firstName = nameParts[0] || trimmedName;
+      const lastName = nameParts.slice(1).join(" ") || "";
+
       const registerPayload = {
-        name: name.trim(),
+        username: userEmail,
         email: userEmail,
-        password: password,
         role: role,
+        first_name: firstName,
+        last_name: lastName,
+        password: password, // Still needed for immediate login after creation
       };
 
-      const response = await profilesApi.register(registerPayload);
-      
+      console.log("DEBUG: Sending Register Payload:", registerPayload);
+      const response = await profilesApi.createUser(registerPayload);
+      console.log("DEBUG: Register Response:", response);
+
       // After successful registration, automatically log in
-      if (response.user || response.id) {
+      if (response.user || response.id || response.username || response.pk) {
         // Try to login with the new credentials
         const loginResponse = await profilesApi.login({
           email: userEmail,
@@ -314,9 +269,16 @@ export default function LoginPage() {
         if (loginResponse.user) {
           login(loginResponse.user);
           await AsyncStorage.setItem("role", loginResponse.user.role || role);
-          
+
           setLoading(false);
-          router.replace(roleRouteMap[loginResponse.user.role || role] || roleRouteMap[role]);
+
+          // Redirect teachers to profile setup, parents to dashboard
+          const userRole = loginResponse.user.role || role;
+          if (userRole === "teacher") {
+            router.replace("/teacher-profile-setup");
+          } else {
+            router.replace(roleRouteMap[userRole] || roleRouteMap[role]);
+          }
         } else {
           throw new Error("Registration successful but login failed");
         }
@@ -325,8 +287,36 @@ export default function LoginPage() {
       }
     } catch (error) {
       console.error("Signup error:", error);
+      console.error("Error response data:", error.response?.data);
+
       if (error.response?.status === 400) {
-        setError(error.response.data?.message || error.response.data?.email?.[0] || t("registrationFailed"));
+        // Try to extract detailed error messages from the response
+        const errorData = error.response.data;
+        let errorMessage = "";
+
+        // Check for common error field formats
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.email) {
+          errorMessage = Array.isArray(errorData.email) ? errorData.email[0] : errorData.email;
+        } else if (errorData.name) {
+          errorMessage = Array.isArray(errorData.name) ? errorData.name[0] : errorData.name;
+        } else if (errorData.password) {
+          errorMessage = Array.isArray(errorData.password) ? errorData.password[0] : errorData.password;
+        } else if (errorData.role) {
+          errorMessage = Array.isArray(errorData.role) ? errorData.role[0] : errorData.role;
+        } else if (errorData.non_field_errors) {
+          errorMessage = Array.isArray(errorData.non_field_errors) ? errorData.non_field_errors[0] : errorData.non_field_errors;
+        } else {
+          // Try to get the first error from any field
+          const firstErrorKey = Object.keys(errorData)[0];
+          if (firstErrorKey) {
+            const firstError = errorData[firstErrorKey];
+            errorMessage = Array.isArray(firstError) ? firstError[0] : firstError;
+          }
+        }
+
+        setError(errorMessage || JSON.stringify(errorData) || t("registrationFailed"));
       } else if (error.response?.status === 409) {
         setError(t("emailAlreadyExists") || "Email already exists");
       } else if (error.message) {
@@ -477,12 +467,12 @@ export default function LoginPage() {
           <Animated.View
             style={[
               dynamicStyles.logoContainer,
-                {
-                  transform: [
-                    { scale: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) },
-                    { scale: role === "parent" ? pulseAnim : 1 },
-                  ],
-                },
+              {
+                transform: [
+                  { scale: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) },
+                  { scale: role === "parent" ? pulseAnim : 1 },
+                ],
+              },
             ]}
           >
             <View

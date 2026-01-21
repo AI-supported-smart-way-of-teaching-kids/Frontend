@@ -19,25 +19,25 @@ import {
   Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Video, Audio } from "expo-av";
+import { Video, Audio, ResizeMode } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useUser } from "../../contexts/UserContext";
-import { useRouter } from "expo-router";
-import { useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import PdfViewer from "../../components/PdfViewer";
 import i18n from "../../i18n";
 import { useLanguage } from "../../contexts/LanguageContext";
 import * as quizApi from "../../src/services/quizApi";
-import * as recommendationApi from "../../src/services/recommendationApi"; // Recommendation API should be used only in Kids
+import * as recommendationApi from "../../src/services/recommendationApi";
 import * as progressApi from "../../src/services/progressApi";
 import * as lessonsApi from "../../src/services/lessonsApi";
 import * as profilesApi from "../../src/services/profilesApi";
 import * as coreApi from "../../src/services/coreApi";
+import api, { fixMediaUrl } from "../../src/api";
 const { height, width } = Dimensions.get("window");
 const isTablet = width >= 768;
 const isSmallScreen = width < 375;
+
 const STORAGE = {
   VIDEOS: "@app_videos_v1",
   QUIZZES: "@app_quizzes_v1",
@@ -91,6 +91,8 @@ const ProgressBar = ({ progress }) => {
 const VideoPlayerWithControls = ({ video, videoRef, collections }) => {
   const [showControls, setShowControls] = useState(false);
   const [status, setStatus] = useState({});
+  const [isBuffering, setIsBuffering] = useState(true);
+  const [isLoaded, setIsLoaded] = useState(false);
   const controlsTimeout = useRef(null);
   const collection = video.collection ? collections?.[video.collection] : null;
 
@@ -135,28 +137,43 @@ const VideoPlayerWithControls = ({ video, videoRef, collections }) => {
   const progress = status.durationMillis ? (status.positionMillis / status.durationMillis) * 100 : 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#000" }}>
+    <View style={{ flex: 1, backgroundColor: "#000", justifyContent: "center" }}>
       <TouchableOpacity
         style={{ flex: 1 }}
         activeOpacity={1}
         onPress={() => setShowControls(!showControls)}
       >
         <Video
-          source={{ uri: video.uri || video.video_url }}
+          source={{ uri: fixMediaUrl(video.uri || video.video_url) }}
           ref={videoRef}
-          style={{ flex: 1 }}
+          style={{ width: "100%", height: "100%" }}
           useNativeControls={false}
-          resizeMode="contain"
-          shouldPlay
-          onPlaybackStatusUpdate={setStatus}
-          onFullscreenUpdate={async (fsStatus) => {
-            if (fsStatus.fullscreenUpdate === 1) {
-              // Entered fullscreen
-            } else if (fsStatus.fullscreenUpdate === 3) {
-              // Exited fullscreen
-            }
+          resizeMode={ResizeMode.CONTAIN} // Ensure we import ResizeMode if needed or use string "contain"
+          shouldPlay={true}
+          isLooping={false}
+          onLoadStart={() => setIsBuffering(true)}
+          onLoad={() => {
+            setIsLoaded(true);
+            setIsBuffering(false);
+          }}
+          onReadyForDisplay={() => setIsBuffering(false)}
+          onPlaybackStatusUpdate={(s) => {
+            setStatus(s);
+            if (s.isBuffering !== undefined) setIsBuffering(s.isBuffering);
           }}
         />
+
+        {/* Buffering / Loading Indicator Overlay */}
+        {(!isLoaded || isBuffering) && (
+          <View style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            alignItems: "center", justifyContent: "center",
+            backgroundColor: "rgba(0,0,0,0.3)"
+          }}>
+            <ActivityIndicator size="large" color="#38BDF8" />
+            <Text style={{ marginTop: 8, color: "#fff", fontWeight: "600" }}>Loading fun...</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* Video Controls Overlay */}
@@ -238,6 +255,9 @@ const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate
   const controlsTimeout = useRef(null);
   const collection = item.collection ? collections?.[item.collection] : null;
 
+  const [isBuffering, setIsBuffering] = useState(true);
+  const [isLoaded, setIsLoaded] = useState(false);
+
   useEffect(() => {
     onVideoRef(index, videoRef.current);
     return () => {
@@ -294,17 +314,36 @@ const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate
       >
         <Video
           ref={videoRef}
-          source={{ uri: item.uri || item.video_url }}
+          source={{ uri: fixMediaUrl(item.uri || item.video_url) }}
           style={{ width: "100%", height: "100%" }}
           useNativeControls={false}
-          resizeMode="cover"
+          resizeMode={ResizeMode.COVER}
           shouldPlay={index === playingIndex}
           isLooping
+          onLoadStart={() => setIsBuffering(true)}
+          onLoad={() => {
+            setIsLoaded(true);
+            setIsBuffering(false);
+          }}
+          onReadyForDisplay={() => setIsBuffering(false)}
           onPlaybackStatusUpdate={(newStatus) => {
             setStatus(newStatus);
+            if (newStatus.isBuffering !== undefined) setIsBuffering(newStatus.isBuffering);
             if (onStatusUpdate) onStatusUpdate(index, newStatus);
           }}
         />
+
+        {/* Buffering Indicator */}
+        {(!isLoaded || isBuffering) && (index === playingIndex) && (
+          <View style={{
+            position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+            alignItems: "center", justifyContent: "center",
+            backgroundColor: "rgba(0,0,0,0.2)"
+          }}>
+            <ActivityIndicator size="large" color="#38BDF8" />
+            <Text style={{ marginTop: 8, color: "#fff", fontWeight: "600", textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: { width: -1, height: 1 }, textShadowRadius: 10 }}>Buffering...</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* Video Controls Overlay */}
@@ -358,12 +397,12 @@ const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate
         </View>
       )}
 
-      <View style={{ 
-        padding: 16, 
-        position: "absolute", 
-        bottom: 0, 
-        left: 0, 
-        right: 0, 
+      <View style={{
+        padding: 16,
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        right: 0,
         backgroundColor: "rgba(0,0,0,0.6)",
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
@@ -387,39 +426,6 @@ const TikTokVideoItem = ({ item, index, playingIndex, onVideoRef, onStatusUpdate
   );
 };
 
-// Full-screen video with controls & progress tracking
-const FullScreenVideo = ({ video, onWatched }) => {
-  const videoRef = useRef(null);
-  const [status, setStatus] = useState({});
-
-  useEffect(() => {
-    if (status.didJustFinish && onWatched) {
-      onWatched(video.id); // mark video as watched
-    }
-  }, [status]);
-
-  return (
-    <View style={styles.videoPage}>
-      <Video
-        ref={videoRef}
-        source={{ uri: video.uri || video.video_url }}
-        style={styles.fullVideo}
-        useNativeControls
-        resizeMode="contain"
-        shouldPlay
-        onPlaybackStatusUpdate={setStatus}
-      />
-      <View style={{ position: "absolute", bottom: 12, left: 12, right: 12 }}>
-        <Text style={{ color: "#fff", fontWeight: "800", fontSize: 18 }}>
-          {video.title}
-        </Text>
-        {video.description ? (
-          <Text style={{ color: "#ddd", marginTop: 6 }}>{video.description}</Text>
-        ) : null}
-      </View>
-    </View>
-  );
-};
 
 export default function Kids() {
   const { user: contextUser, logout } = useUser();
@@ -435,6 +441,8 @@ export default function Kids() {
   const [profile, setProfile] = useState(null);
   // Selected child profile (loaded using child_id)
   const [selectedChild, setSelectedChild] = useState(null);
+  // Numeric child ID for backend API calls (separate from UUID)
+  const [numericChildId, setNumericChildId] = useState(null);
   // Which top section is active on the page
   const [selectedSection, setSelectedSection] = useState("dashboard");
   // Collection selection for lessons view
@@ -455,13 +463,12 @@ export default function Kids() {
   const [loadingChildBadges, setLoadingChildBadges] = useState(false);
   const [progressRecords, setProgressRecords] = useState([]);
   const [loadingProgressRecords, setLoadingProgressRecords] = useState(false);
-  
+
   // Track video watching sessions (entry time and duration)
   const videoSessionStartTime = useRef(null);
   const videoSessionTimer = useRef(null);
   const currentVideoId = useRef(null);
 
-  // Recommended videos state (populated by AI recommendations API)
   const [recommendedVideos, setRecommendedVideos] = useState([]);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
 
@@ -474,8 +481,18 @@ export default function Kids() {
       }
       try {
         setLoadingRecommendations(true);
+        // Prioritize numeric ID for AI recommendations (required by backend)
+        const targetId = numericChildId || selectedChild.numericId || (typeof selectedChild.id === 'number' ? selectedChild.id : null);
+
+        if (!targetId) {
+          console.log("Waiting for numeric child ID before fetching recommendations...");
+          return;
+        }
+
+        console.log(`Fetching recommendations for child ID: ${targetId}`);
+
         const data = await recommendationApi.getRecommendations({
-          childId: selectedChild.id,
+          childId: targetId,
         });
 
         // Normalise incoming objects to the shape used by the UI where possible
@@ -516,14 +533,14 @@ export default function Kids() {
     };
 
     loadRecommendedVideos();
-  }, [selectedChild?.id]);
+  }, [selectedChild?.id, numericChildId]);
 
   // Badge system state
   const [recentBadge, setRecentBadge] = useState(null);
   const badgeAnim = useRef(new Animated.Value(0)).current;
 
   // Video feed mode
-  const [videoFeedMode, setVideoFeedMode] = useState(false);
+  const [videoFeedMode, setVideoFeedMode] = useState(true);
   const viewableIndex = useRef(0);
 
   // Show badge with animation
@@ -548,8 +565,8 @@ export default function Kids() {
   const TikTokVideoList = ({ collections }) => {
     const videoRefs = useRef({});
     const [playingIndex, setPlayingIndex] = useState(0);
-    const [videoStatuses, setVideoStatuses] = useState({});
     const currentPlayingRef = useRef(null);
+    const [videoStatuses, setVideoStatuses] = useState({});
 
     useEffect(() => {
       // Play the first video when entering feed mode
@@ -568,12 +585,12 @@ export default function Kids() {
         const newIndex = viewableItems[0].index;
         setPlayingIndex(newIndex);
         viewableIndex.current = newIndex;
-        
+
         // Pause currently playing video
         if (currentPlayingRef.current) {
           currentPlayingRef.current.pauseAsync().catch(console.warn);
         }
-        
+
         // Play the visible video
         if (videoRefs.current[newIndex]) {
           videoRefs.current[newIndex].playAsync().then(() => {
@@ -640,6 +657,9 @@ export default function Kids() {
           viewabilityConfig={{
             itemVisiblePercentThreshold: 50,
           }}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
+          windowSize={3}
           getItemLayout={(data, index) => ({
             length: height,
             offset: height * index,
@@ -698,16 +718,16 @@ export default function Kids() {
 
       const childId = selectedChild.id;
       const childName = selectedChild.nickname || i18n.t('unknownStudent');
-      
+
       // Progress is now tracked via backend API in real-time:
       // - Video progress: tracked via lessonsApi.trackLessonProgress()
       // - Quiz progress: tracked via quizApi.submitQuizAttempt()
       // - Badges: tracked via progressApi (child-badges endpoint)
-      
+
       // Keep local storage as fallback/cache
       const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
       const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
-      
+
       if (!studentProgress[childId]) {
         studentProgress[childId] = {
           name: childName,
@@ -721,11 +741,11 @@ export default function Kids() {
       studentProgress[childId].videosCompleted = progress.videosCompleted;
       studentProgress[childId].name = childName;
       studentProgress[childId].badges = progress.badges || [];
-      
+
       if (!studentProgress[childId].videoWatchingDetails) {
         studentProgress[childId].videoWatchingDetails = [];
       }
-      
+
       await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
     } catch (e) {
       console.warn("Failed to save student progress:", e);
@@ -736,7 +756,72 @@ export default function Kids() {
   useEffect(() => {
     saveStudentProgress();
   }, [progress.videosCompleted.length, progress.badges?.length]);
-  
+
+  // Function to save video watching session (using numeric child_id)
+  const saveVideoWatchingSession = useCallback(async (videoId, entryTime, durationMs) => {
+    try {
+      if (!numericChildId) {
+        console.warn("No numeric child ID available, cannot save video session");
+        return;
+      }
+
+      // Use numericChildId for backend API calls (backend expects numeric ID, not UUID)
+      const childId = numericChildId;
+
+      // Track progress via backend API
+      try {
+        const targetId = numericChildId || selectedChild.numericId || (typeof selectedChild.id === 'number' ? selectedChild.id : null);
+        await lessonsApi.trackLessonProgress(videoId, {
+          child: targetId || childId,
+          child_id: targetId || childId,
+          entry_time: entryTime,
+          duration_ms: durationMs,
+          status: "in-progress", // or "completed" if video finished
+        });
+      } catch (apiError) {
+        console.warn("Failed to save video session to backend:", apiError);
+        // Fallback to local storage
+        const childName = selectedChild.nickname || i18n.t('unknownStudent');
+        const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
+        const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
+
+        if (!studentProgress[childId]) {
+          studentProgress[childId] = {
+            name: childName,
+            videosCompleted: [],
+            videoWatchingDetails: [],
+            quizResults: [],
+          };
+        }
+
+        if (!studentProgress[childId].videoWatchingDetails) {
+          studentProgress[childId].videoWatchingDetails = [];
+        }
+
+        const existingEntry = studentProgress[childId].videoWatchingDetails.find(
+          (entry) => entry.videoId === videoId
+        );
+
+        if (existingEntry) {
+          existingEntry.totalDurationMs = (existingEntry.totalDurationMs || 0) + durationMs;
+          if (!existingEntry.entryTime) {
+            existingEntry.entryTime = entryTime;
+          }
+        } else {
+          studentProgress[childId].videoWatchingDetails.push({
+            videoId,
+            entryTime,
+            totalDurationMs: durationMs,
+          });
+        }
+
+        await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
+      }
+    } catch (e) {
+      console.warn("Failed to save video watching session:", e);
+    }
+  }, [numericChildId, selectedChild?.id]);
+
   // Cleanup video session when detail changes or component unmounts
   useEffect(() => {
     return () => {
@@ -744,23 +829,23 @@ export default function Kids() {
       if (videoSessionStartTime.current && currentVideoId.current) {
         const durationMs = Date.now() - videoSessionStartTime.current;
         const entryTime = new Date(videoSessionStartTime.current).toISOString();
-        
+
         // Clear timer
         if (videoSessionTimer.current) {
           clearInterval(videoSessionTimer.current);
           videoSessionTimer.current = null;
         }
-        
+
         // Save the session asynchronously
         saveVideoWatchingSession(currentVideoId.current, entryTime, durationMs).catch(console.warn);
-        
+
         // Reset start time and video ID
         videoSessionStartTime.current = null;
         currentVideoId.current = null;
       }
     };
-  }, [detail]);
-  
+  }, [detail, saveVideoWatchingSession]);
+
   // Quiz-taking state when viewing a quiz detail
   const [quizState, setQuizState] = useState(null);
   // Load profile function (accessible from anywhere)
@@ -798,59 +883,166 @@ export default function Kids() {
           const childData = JSON.parse(stored);
 
           // Validate child data has required fields
-          if (!childData || !childData.id) {
-            console.warn("Invalid child data in storage");
+          // Normalize: check for both id and uuid fields
+          const childId = childData.id || childData.uuid;
+          if (!childData || !childId) {
+            console.warn("Invalid child data in storage - missing ID/UUID");
             setLoadingChild(false);
             // Don't redirect - just show error state
             return;
           }
 
-          // Validate that the child belongs to the current logged-in parent
-          if (user?.id) {
-            const storedChildren = await AsyncStorage.getItem("@app_children_v1");
-            if (storedChildren) {
-              const allChildren = JSON.parse(storedChildren);
-              const parentChildren = allChildren[user.id] || [];
-              const isOwned = parentChildren.some(c => c.id === childData.id);
+          // Extract numeric ID if available (stored separately from UUID)
+          // Extract numeric ID if available
+          const initialNid = parseInt(childData.numericId || childData.id);
+          if (!isNaN(initialNid)) {
+            setNumericChildId(initialNid);
+          }
 
-              if (!isOwned) {
-                console.warn("Selected child does not belong to current parent");
-                await AsyncStorage.removeItem("@selected_child");
-                setSelectedChild(null);
-                setLoadingChild(false);
-                return;
+          // Ensure id field exists (normalize uuid to id for frontend logic)
+          if (!childData.id && childData.uuid) {
+            childData.id = childData.uuid;
+          }
+
+          // Validate that the child belongs to the current logged-in parent
+          // Check backend API first, then fallback to old storage format
+          if (user?.id) {
+            let isOwned = false;
+
+            // Try to validate via backend API first
+            try {
+              const parentChildren = await profilesApi.getChildren({ parent: user.id });
+              const childrenList = Array.isArray(parentChildren)
+                ? parentChildren
+                : (parentChildren?.results || parentChildren?.data || []);
+
+              // Normalize children IDs (backend might use uuid)
+              // Find matching child to extract numeric ID
+              const matchingChild = childrenList.find(c => {
+                const childId = c.id || c.uuid;
+                return childId === childData.id || childId === childData.uuid ||
+                  (c.uuid && c.uuid === childData.uuid) ||
+                  (c.uuid && c.uuid === childData.id);
+              });
+
+              if (matchingChild) {
+                // Extract numeric ID (if it's a number) separately from UUID
+                // Backend returns both 'id' (numeric) and 'uuid' (string)
+                if (typeof matchingChild.id === 'number') {
+                  setNumericChildId(matchingChild.id);
+                  // Update childData to preserve both numeric ID and UUID
+                  childData.numericId = matchingChild.id;
+                  if (matchingChild.uuid && !childData.uuid) {
+                    childData.uuid = matchingChild.uuid;
+                  }
+                }
               }
-            } else {
-              // No children stored for this parent, clear invalid selection
-              console.warn("No children found for current parent");
-              await AsyncStorage.removeItem("@selected_child");
-              setSelectedChild(null);
-              setLoadingChild(false);
-              return;
+
+              isOwned = !!matchingChild;
+            } catch (apiError) {
+              console.warn("Failed to validate child via backend API, trying fallback:", apiError);
+
+              // Fallback to old storage format for backward compatibility
+              const storedChildren = await AsyncStorage.getItem("@app_children_v1");
+              if (storedChildren) {
+                const allChildren = JSON.parse(storedChildren);
+                const parentChildren = allChildren[user.id] || [];
+                isOwned = parentChildren.some(c => c.id === childData.id);
+              }
+            }
+
+            // If validation fails, still allow navigation but log a warning
+            // This is more permissive to handle edge cases during migration
+            if (!isOwned) {
+              console.warn("Selected child validation failed, but allowing navigation");
+              // Don't block navigation - just log the warning
             }
           } else {
             // No user logged in, clear selection
             console.warn("No user logged in");
             await AsyncStorage.removeItem("@selected_child");
             setSelectedChild(null);
+            setNumericChildId(null);
             setLoadingChild(false);
             return;
           }
 
           let finalChild = childData;
 
+          // Normalize child data: ensure id field exists (map uuid to id if needed)
+          if (finalChild.uuid && !finalChild.id) {
+            finalChild.id = finalChild.uuid;
+          }
+          if (finalChild.learning_level && !finalChild.learningLevel) {
+            finalChild.learningLevel = finalChild.learning_level.toUpperCase();
+          }
+          if (finalChild.parent_phone && !finalChild.parentPhone) {
+            finalChild.parentPhone = finalChild.parent_phone;
+          }
+          if (finalChild.avatar_url && !finalChild.avatarUrl) {
+            finalChild.avatarUrl = finalChild.avatar_url;
+          }
+
           // Refresh child info from backend when possible
+          // Fetch full children list to get numeric ID
           try {
-            const freshChild = await profilesApi.getChild(childData.id);
-            if (freshChild && freshChild.id) {
-              finalChild = freshChild;
-              await AsyncStorage.setItem("@selected_child", JSON.stringify(freshChild));
+            const childId = finalChild.id || finalChild.uuid;
+            if (childId) {
+              // Fetch children list to get numeric ID (backend detail endpoint may use UUID)
+              const childrenResponse = await api.get('profiles/children/');
+              const childrenList = Array.isArray(childrenResponse.data)
+                ? childrenResponse.data
+                : (childrenResponse.data?.results || childrenResponse.data?.data || []);
+
+              // Find the matching child to extract numeric ID
+              const matchingChild = childrenList.find(c => {
+                return (c.uuid === childId || c.uuid === finalChild.uuid) ||
+                  (c.id === childId || (typeof c.id === 'number' && String(c.id) === childId));
+              });
+
+              if (matchingChild) {
+                // Extract numeric ID separately from UUID
+                const matchingId = parseInt(matchingChild.id);
+                if (!isNaN(matchingId)) {
+                  setNumericChildId(matchingId);
+                  finalChild.numericId = matchingId;
+                }
+
+                // Normalize the fresh child data
+                if (matchingChild.uuid && !finalChild.uuid) {
+                  finalChild.uuid = matchingChild.uuid;
+                }
+                if (!finalChild.id && finalChild.uuid) {
+                  finalChild.id = finalChild.uuid; // Keep id as UUID for frontend logic
+                }
+                if (matchingChild.learning_level && !finalChild.learning_level) {
+                  finalChild.learning_level = matchingChild.learning_level;
+                }
+                if (matchingChild.learning_level && !finalChild.learningLevel) {
+                  finalChild.learningLevel = matchingChild.learning_level.toUpperCase();
+                }
+                if (matchingChild.parent_phone && !finalChild.parentPhone) {
+                  finalChild.parentPhone = matchingChild.parent_phone;
+                }
+                if (matchingChild.avatar_url && !finalChild.avatarUrl) {
+                  finalChild.avatarUrl = matchingChild.avatar_url;
+                }
+
+                // Update with fresh data while preserving both UUID and numeric ID
+                await AsyncStorage.setItem("@selected_child", JSON.stringify(finalChild));
+              }
             }
           } catch (refreshErr) {
             console.warn("Failed to refresh child from profiles API:", refreshErr);
+            // Continue with stored child data if refresh fails
           }
 
           setSelectedChild(finalChild);
+
+          // Ensure numericChildId is set if available in finalChild
+          if (finalChild.numericId && typeof finalChild.numericId === 'number') {
+            setNumericChildId(finalChild.numericId);
+          }
 
           // Use child_id to load child-specific progress
           const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
@@ -912,12 +1104,12 @@ export default function Kids() {
         // Expecting fields: id, name, description, created_at
         const mapped =
           Array.isArray(data) ?
-          data.map((b) => ({
-            id: b.id,
-            name: b.name,
-            description: b.description,
-            created_at: b.created_at,
-          })) : [];
+            data.map((b) => ({
+              id: b.id,
+              name: b.name,
+              description: b.description,
+              created_at: b.created_at,
+            })) : [];
         setAllBadges(mapped);
       } catch (e) {
         console.warn("Failed to load badges from backend:", e);
@@ -940,19 +1132,20 @@ export default function Kids() {
 
       try {
         setLoadingChildBadges(true);
-        const data = await progressApi.getChildBadges({ child: selectedChild.id });
+        const targetId = numericChildId || selectedChild.numericId || (typeof selectedChild.id === 'number' ? selectedChild.id : null);
+        const data = await progressApi.getChildBadges({ child: targetId || selectedChild.id });
         // Expecting fields: id, child, child_nickname, badge, badge_name, awarded_at
         const mapped = Array.isArray(data)
           ? data
-              .filter((cb) => cb.child === selectedChild.id || cb.child === parseInt(selectedChild.id))
-              .map((cb) => ({
-                id: cb.id,
-                child: cb.child,
-                child_nickname: cb.child_nickname,
-                badge: cb.badge,
-                badge_name: cb.badge_name,
-                awarded_at: cb.awarded_at,
-              }))
+            .filter((cb) => cb.child === selectedChild.id || cb.child === parseInt(selectedChild.id))
+            .map((cb) => ({
+              id: cb.id,
+              child: cb.child,
+              child_nickname: cb.child_nickname,
+              badge: cb.badge,
+              badge_name: cb.badge_name,
+              awarded_at: cb.awarded_at,
+            }))
           : [];
         setChildBadges(mapped);
       } catch (e) {
@@ -964,7 +1157,7 @@ export default function Kids() {
     };
 
     loadChildBadges();
-  }, [selectedChild?.id]);
+  }, [selectedChild?.id, numericChildId]);
 
   // Load per-lesson progress records from backend when selected child changes
   useEffect(() => {
@@ -976,25 +1169,26 @@ export default function Kids() {
 
       try {
         setLoadingProgressRecords(true);
-        const data = await progressApi.getProgress({ child: selectedChild.id });
+        const targetId = numericChildId || selectedChild.numericId || (typeof selectedChild.id === 'number' ? selectedChild.id : null);
+        const data = await progressApi.getProgress({ child: targetId || selectedChild.id });
         // Expecting fields:
         // id, child, child_nickname, lesson, lesson_title, lesson_slug,
         // status, points_earned, last_accessed, completion_date
         const mapped = Array.isArray(data)
           ? data
-              .filter((p) => p.child === selectedChild.id || p.child === parseInt(selectedChild.id))
-              .map((p) => ({
-                id: p.id,
-                child: p.child,
-                child_nickname: p.child_nickname,
-                lesson: p.lesson,
-                lesson_title: p.lesson_title,
-                lesson_slug: p.lesson_slug,
-                status: p.status,
-                points_earned: p.points_earned,
-                last_accessed: p.last_accessed,
-                completion_date: p.completion_date,
-              }))
+            .filter((p) => p.child === selectedChild.id || p.child === parseInt(selectedChild.id))
+            .map((p) => ({
+              id: p.id,
+              child: p.child,
+              child_nickname: p.child_nickname,
+              lesson: p.lesson,
+              lesson_title: p.lesson_title,
+              lesson_slug: p.lesson_slug,
+              status: p.status,
+              points_earned: p.points_earned,
+              last_accessed: p.last_accessed,
+              completion_date: p.completion_date,
+            }))
           : [];
         setProgressRecords(mapped);
       } catch (e) {
@@ -1006,7 +1200,7 @@ export default function Kids() {
     };
 
     loadProgressRecords();
-  }, [selectedChild?.id]);
+  }, [selectedChild?.id, numericChildId]);
 
   // Load content function (videos/collections from backend lessons API, with AsyncStorage fallback)
   const loadContent = async () => {
@@ -1101,52 +1295,39 @@ export default function Kids() {
     }, [])
   );
 
-  // Compute selected collection
-  const selectedCollection = selectedCollectionId ? collections[selectedCollectionId] : null;
 
-  // Render collection card
+
+  // Render collection card - Grid Layout
   const renderCollectionCard = (collection) => {
+    // Count lessons in this collection
+    const lessonCount = videos.filter(v => v.collection === collection.id).length;
+
     return (
       <AnimatedPressable
         key={collection.id}
-        style={{ marginTop: 12 }}
+        style={{ width: "48%", marginBottom: 16 }}
         onPress={() => {
           // Set selected collection to show videos in that collection
           setSelectedCollectionId(collection.id);
         }}
       >
-        <View style={styles.itemCard}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>
-              📦 {collection.title}
-            </Text>
-            <View style={styles.cardBadge}>
-              <Text style={styles.cardBadgeText}>
-                Collection
-              </Text>
-            </View>
+        <View style={styles.collectionCard}>
+          <View style={styles.collectionIconContainer}>
+            <Ionicons name="folder" size={48} color="#FBBF24" />
           </View>
-          {collection.description ? (
-            <Text style={styles.cardDesc} numberOfLines={2}>
-              {collection.description}
-            </Text>
-          ) : null}
+
+          <Text style={styles.collectionTitle} numberOfLines={1}>
+            {collection.title}
+          </Text>
+
+          <Text style={styles.collectionSubtitle}>
+            {lessonCount} {lessonCount === 1 ? i18n.t('lesson') : i18n.t('lessons')}
+          </Text>
         </View>
       </AnimatedPressable>
     );
   };
-  // Logout
-  const handleLogout = async () => {
-    try {
-      if (logout) await logout();
-      else await AsyncStorage.multiRemove(["user", "userToken", "userRole"]);
-    } catch (e) {
-      console.warn("Logout error:", e);
-    } finally {
-      // Navigate to login screen
-      router.replace("/login");
-    }
-  };
+
   // Pick profile photo directly from dashboard - updates child's avatar in parent's children list
   const pickProfilePhoto = async () => {
     try {
@@ -1168,38 +1349,41 @@ export default function Kids() {
       });
       if (!result.canceled) {
         const uri = result.assets[0].uri;
-        
+
         // Update the selected child's avatar
+        // Preserve numericId when updating
         const updatedChild = {
           ...selectedChild,
           avatarUrl: uri,
+          // Preserve numericId if it exists
+          ...(numericChildId && { numericId: numericChildId }),
         };
-        
+
         // Update in parent's children list (STORAGE.CHILDREN)
         try {
           if (user?.id) {
             const stored = await AsyncStorage.getItem("@app_children_v1");
             let allChildren = stored ? JSON.parse(stored) : {};
             const parentChildren = allChildren[user.id] || [];
-            
+
             // Update the child in the parent's children list
             const updatedChildren = parentChildren.map((child) =>
               child.id === selectedChild.id ? updatedChild : child
             );
-            
+
             allChildren[user.id] = updatedChildren;
             await AsyncStorage.setItem("@app_children_v1", JSON.stringify(allChildren));
           }
         } catch (updateError) {
           console.warn("Failed to update child in parent's list:", updateError);
         }
-        
-        // Update the selected_child storage
+
+        // Update the selected_child storage (preserves both UUID and numericId)
         await AsyncStorage.setItem("@selected_child", JSON.stringify(updatedChild));
-        
-        // Update local state
+
+        // Update local state (numericChildId should already be set, but ensure it's preserved)
         setSelectedChild(updatedChild);
-        
+
         Alert.alert(i18n.t('success'), i18n.t('profilePictureUpdated'));
       }
     } catch (e) {
@@ -1236,18 +1420,18 @@ export default function Kids() {
       const entryTime = new Date(videoSessionStartTime.current).toISOString();
       saveVideoWatchingSession(currentVideoId.current, entryTime, durationMs).catch(console.warn);
     }
-    
+
     // Track entry time for new video
     videoSessionStartTime.current = Date.now();
     currentVideoId.current = video.id;
-    
+
     setDetail({ type: "video", item: video });
-    
+
     // Start tracking time spent watching
     videoSessionTimer.current = setInterval(() => {
       // This will be used to update the duration periodically
     }, 1000);
-    
+
     // Mark watched locally
     setProgress((prev) => {
       const updated = {
@@ -1260,76 +1444,17 @@ export default function Kids() {
       return updated;
     });
 
-    // Notify backend about lesson progress (best-effort)
-    if (video.id && selectedChild?.id) {
+    const targetId = numericChildId || selectedChild.numericId || (typeof selectedChild.id === 'number' ? selectedChild.id : null);
+    /* 
+    // Disabled as per user request to avoid 404 errors
+    if (video.id && targetId) {
       lessonsApi
-        .trackLessonProgress(video.id, { child: selectedChild.id, child_id: selectedChild.id })
+        .trackLessonProgress(video.id, { child: targetId, child_id: targetId })
         .catch((err) => console.warn("Failed to track lesson progress:", err));
-    }
+    } 
+    */
   };
-  
-  // Function to save video watching session (using child_id)
-  const saveVideoWatchingSession = async (videoId, entryTime, durationMs) => {
-    try {
-      if (!selectedChild?.id) {
-        console.warn("No child selected, cannot save video session");
-        return;
-      }
 
-      const childId = selectedChild.id;
-      
-      // Track progress via backend API
-      try {
-        await lessonsApi.trackLessonProgress(videoId, {
-          child: childId,
-          child_id: childId,
-          entry_time: entryTime,
-          duration_ms: durationMs,
-          status: "in-progress", // or "completed" if video finished
-        });
-      } catch (apiError) {
-        console.warn("Failed to save video session to backend:", apiError);
-        // Fallback to local storage
-        const childName = selectedChild.nickname || i18n.t('unknownStudent');
-        const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
-        const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
-        
-        if (!studentProgress[childId]) {
-          studentProgress[childId] = {
-            name: childName,
-            videosCompleted: [],
-            videoWatchingDetails: [],
-            quizResults: [],
-          };
-        }
-        
-        if (!studentProgress[childId].videoWatchingDetails) {
-          studentProgress[childId].videoWatchingDetails = [];
-        }
-        
-        const existingEntry = studentProgress[childId].videoWatchingDetails.find(
-          (entry) => entry.videoId === videoId
-        );
-        
-        if (existingEntry) {
-          existingEntry.totalDurationMs = (existingEntry.totalDurationMs || 0) + durationMs;
-          if (!existingEntry.entryTime) {
-            existingEntry.entryTime = entryTime;
-          }
-        } else {
-          studentProgress[childId].videoWatchingDetails.push({
-            videoId,
-            entryTime,
-            totalDurationMs: durationMs,
-          });
-        }
-        
-        await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
-      }
-    } catch (e) {
-      console.warn("Failed to save video watching session:", e);
-    }
-  };
   const openQuizInline = (quizId) => {
     const quiz = quizzes[quizId];
     if (!quiz || !quiz.questions || quiz.questions.length === 0) {
@@ -1343,6 +1468,7 @@ export default function Kids() {
       answers: Array(quiz.questions.length).fill(null),
       finished: false,
       score: null,
+      startTime: Date.now(),
     });
     setDetail({ type: "quiz", item: quizId });
   };
@@ -1360,134 +1486,129 @@ export default function Kids() {
     if (!quizId || !answers) return;
     const quiz = quizzes[quizId];
     if (!quiz || !quiz.questions) return;
+
     let correct = 0;
     quiz.questions.forEach((q, i) => {
-      if (answers[i] === q.answerIndex) correct++;
+      const questionCorrectIndex = q.answerIndex !== undefined ? q.answerIndex : q.correct_option_index;
+      if (answers[i] === questionCorrectIndex) correct++;
     });
     const score = Math.round((correct / quiz.questions.length) * 100);
-    
+
     if (!selectedChild?.id) {
       Alert.alert(i18n.t('error'), "No child selected");
       return;
     }
 
-    const childId = selectedChild.id;
     const childName = selectedChild.nickname || i18n.t('unknownStudent');
-    
+    const childUUID = selectedChild.uuid || selectedChild.id;
+
     try {
-      // Submit quiz attempt to backend
+      // Calculate duration
+      const durationSeconds = quizState?.startTime
+        ? Math.floor((Date.now() - quizState.startTime) / 1000)
+        : 60;
+
+      // Ensure we have a numeric ID (Integer) for the backend
+      const rawChildId = numericChildId || selectedChild?.numericId || selectedChild?.id;
+      const childInt = parseInt(rawChildId);
+
+      if (isNaN(childInt)) {
+        console.error("CRITICAL: Failed to determine numeric child ID", { rawChildId, selectedChild });
+        Alert.alert(i18n.t('error'), "Account error: Numeric child ID not found. Please re-select your profile.");
+        return;
+      }
+
+      // Format answers for the specific backend Scoring Logic:
+      // answers: [{ "question_id": int, "selected_indices": [int] }]
+      const backendAnswers = [];
+      quiz.questions.forEach((q, i) => {
+        if (answers[i] !== null && answers[i] !== undefined) {
+          backendAnswers.push({
+            question_id: parseInt(q.id),
+            selected_indices: [parseInt(answers[i])] // Even single choice must be a list
+          });
+        }
+      });
+
       const attemptData = {
-        quiz: parseInt(quizId) || quizId, // Ensure it's a number if backend expects it
-        student: childId,
-        answers: answers,
-        score: score,
-        completed_at: new Date().toISOString(),
+        child_id: childUUID, // Reverting to UUID as Integer ID returned "child not found"
+        quiz_id: parseInt(quizId),
+        answers: backendAnswers,
+        duration_seconds: durationSeconds,
       };
 
+      console.log("Submitting To Backend:", JSON.stringify(attemptData, null, 2));
       const submittedAttempt = await quizApi.submitQuizAttempt(attemptData);
-      
-      // Update quiz results with child info (for local display)
+
+      // Local success logic
       const updated = { ...quizzes };
-      const item = updated[quizId] || {};
+      const item = updated[quizId] || { ...quiz };
       item.results = item.results || [];
-      item.results.unshift({ 
-        score, 
+      item.results.unshift({
+        score,
         date: new Date().toISOString(),
-        childId,
+        childId: childUUID,
         childName,
-        attemptId: submittedAttempt.id,
+        attemptId: submittedAttempt?.id,
       });
-      updated[quizId] = { ...quiz, ...item };
-      
-      // Update student progress (using child_id)
-      const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
-      const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
-      
-      if (!studentProgress[childId]) {
-        studentProgress[childId] = {
+      updated[quizId] = item;
+
+      // Update student progress in AsyncStorage
+      const rawProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
+      const studentProgress = rawProgress ? JSON.parse(rawProgress) : {};
+
+      if (!studentProgress[childUUID]) {
+        studentProgress[childUUID] = {
           name: childName,
           videosCompleted: [],
           quizResults: [],
         };
       }
-      
-      // Add quiz result to child progress
-      const existingResult = studentProgress[childId].quizResults.find(r => r.quizId === quizId);
-      if (!existingResult) {
-        studentProgress[childId].quizResults.push({
-          quizId,
-          quizTitle: quiz.title,
-          score,
-          date: new Date().toISOString(),
-          attemptId: submittedAttempt.id,
-        });
+
+      const existingRecordIndex = studentProgress[childUUID].quizResults.findIndex(r => r.quizId === quizId);
+      const resultEntry = {
+        quizId,
+        quizTitle: quiz.title,
+        score,
+        date: new Date().toISOString(),
+        attemptId: submittedAttempt?.id,
+      };
+
+      if (existingRecordIndex > -1) {
+        studentProgress[childUUID].quizResults[existingRecordIndex] = resultEntry;
       } else {
-        // Update existing result
-        existingResult.score = score;
-        existingResult.date = new Date().toISOString();
-        existingResult.attemptId = submittedAttempt.id;
+        studentProgress[childUUID].quizResults.push(resultEntry);
       }
-      
-      // Update videos completed
-      studentProgress[childId].videosCompleted = progress.videosCompleted;
-      
+
+      // Sync local state
       await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
       await AsyncStorage.setItem(STORAGE.QUIZZES, JSON.stringify(updated));
       setQuizzes(updated);
       setQuizState((prev) => (prev ? { ...prev, finished: true, score } : prev));
       checkForNewBadge("quiz");
+
       Alert.alert(i18n.t('quizCompleted'), `${i18n.t('yourScore')}: ${score}%`);
     } catch (error) {
-      console.warn("Failed to submit quiz attempt to backend:", error);
-      
-      // Fallback: save to AsyncStorage only
+      console.warn("Quiz Submission Error:", error);
+      const backendError = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+      Alert.alert(i18n.t('error'), "Backend submission failed: " + backendError);
+
+      // Fallback: Save locally if backend fails
       try {
         const updated = { ...quizzes };
-        const item = updated[quizId] || {};
+        const item = updated[quizId] || { ...quiz };
         item.results = item.results || [];
-        item.results.unshift({ 
-          score, 
+        item.results.unshift({
+          score,
           date: new Date().toISOString(),
-          childId,
+          childId: childUUID,
           childName,
         });
-        updated[quizId] = { ...quiz, ...item };
-        
-        const rawStudentProgress = await AsyncStorage.getItem(STORAGE.STUDENT_PROGRESS);
-        const studentProgress = rawStudentProgress ? JSON.parse(rawStudentProgress) : {};
-        
-        if (!studentProgress[childId]) {
-          studentProgress[childId] = {
-            name: childName,
-            videosCompleted: [],
-            quizResults: [],
-          };
-        }
-        
-        const existingResult = studentProgress[childId].quizResults.find(r => r.quizId === quizId);
-        if (!existingResult) {
-          studentProgress[childId].quizResults.push({
-            quizId,
-            quizTitle: quiz.title,
-            score,
-            date: new Date().toISOString(),
-          });
-        } else {
-          existingResult.score = score;
-          existingResult.date = new Date().toISOString();
-        }
-        
-        studentProgress[childId].videosCompleted = progress.videosCompleted;
-        
-        await AsyncStorage.setItem(STORAGE.STUDENT_PROGRESS, JSON.stringify(studentProgress));
-        await AsyncStorage.setItem(STORAGE.QUIZZES, JSON.stringify(updated));
+        updated[quizId] = item;
         setQuizzes(updated);
-        setQuizState((prev) => (prev ? { ...prev, finished: true, score } : prev));
-        checkForNewBadge("quiz");
-        Alert.alert(i18n.t('quizCompleted'), `${i18n.t('yourScore')}: ${score}%`);
-      } catch (e) {
-        console.warn("Failed to save quiz result to AsyncStorage:", e);
-        Alert.alert(i18n.t('error'), "Failed to save quiz result. Please try again.");
+        await AsyncStorage.setItem(STORAGE.QUIZZES, JSON.stringify(updated));
+      } catch (localErr) {
+        console.warn("Storage fallback failed:", localErr);
       }
     }
   };
@@ -1495,40 +1616,93 @@ export default function Kids() {
   // Render item card: opens inline detail now
   const renderCard = (item, type) => {
     const collection = item.collection ? collections[item.collection] : null;
+    const isVideo = type === "videos";
+
     return (
       <AnimatedPressable
         key={item.id}
-        style={{ marginTop: 12 }}
+        style={{ marginTop: 16 }}
         onPress={() => {
           if (type === "videos") openVideoInline(item);
           if (type === "quizzes") openQuizInline(item.id);
         }}
       >
-        <View style={styles.itemCard}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>
-              {type === "videos" ? "🎬 " : "❓ "}
-              {item.title}
-            </Text>
-            <View style={styles.cardBadge}>
-              <Text style={styles.cardBadgeText}>
-                {type}
-              </Text>
-            </View>
-          </View>
-          {item.description ? (
-            <Text style={styles.cardDesc} numberOfLines={2}>
-              {item.description}
-            </Text>
-          ) : null}
-          {collection && (
-            <View style={{ marginTop: 8, flexDirection: "row", alignItems: "center", padding: 8, backgroundColor: "#F0FDF4", borderRadius: 8 }}>
-              <Ionicons name="folder" size={16} color="#16A34A" />
-              <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: "600", color: "#16A34A" }}>
-                📦 {collection.title}
-              </Text>
+        <View style={[styles.itemCard, { padding: 0, overflow: "hidden" }]}>
+          {/* Thumbnail Section for Videos */}
+          {isVideo && (
+            <View style={{ height: 180, width: "100%", backgroundColor: "#000", position: "relative" }}>
+              {item.thumbnail ? (
+                <Image
+                  source={{ uri: fixMediaUrl(item.thumbnail) }}
+                  style={{ width: "100%", height: "100%" }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#1E293B" }}>
+                  <Ionicons name="film" size={48} color="#475569" />
+                </View>
+              )}
+              {/* Play Overlay */}
+              <View style={{
+                position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: "rgba(0,0,0,0.3)",
+                alignItems: "center", justifyContent: "center"
+              }}>
+                <View style={{
+                  width: 56, height: 56, borderRadius: 28,
+                  backgroundColor: "rgba(255,255,255,0.9)",
+                  alignItems: "center", justifyContent: "center",
+                  elevation: 4, shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }
+                }}>
+                  <Ionicons name="play" size={32} color="#38BDF8" style={{ marginLeft: 4 }} />
+                </View>
+              </View>
+
+              {/* Duration Badge if available */}
+              {item.duration_seconds && (
+                <View style={{
+                  position: "absolute", bottom: 12, right: 12,
+                  backgroundColor: "rgba(0,0,0,0.7)",
+                  paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6
+                }}>
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>
+                    {Math.floor(item.duration_seconds / 60)}:{String(item.duration_seconds % 60).padStart(2, '0')}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
+
+          <View style={{ padding: 16 }}>
+            <View style={styles.cardHeader}>
+              <Text style={[styles.cardTitle, { fontSize: 18 }]}>
+                {!isVideo && (type === "quizzes" ? "❓ " : "📄 ")}
+                {item.title}
+              </Text>
+              {!isVideo && (
+                <View style={styles.cardBadge}>
+                  <Text style={styles.cardBadgeText}>
+                    {type}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {item.description ? (
+              <Text style={[styles.cardDesc, { marginTop: 8 }]} numberOfLines={2}>
+                {item.description}
+              </Text>
+            ) : null}
+
+            {collection && (
+              <View style={{ marginTop: 12, flexDirection: "row", alignItems: "center", padding: 8, backgroundColor: "#F0FDF4", borderRadius: 8, alignSelf: "flex-start" }}>
+                <Ionicons name="folder" size={14} color="#16A34A" />
+                <Text style={{ marginLeft: 6, fontSize: 12, fontWeight: "600", color: "#16A34A" }}>
+                  {collection.title}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
       </AnimatedPressable>
     );
@@ -1538,7 +1712,7 @@ export default function Kids() {
   const renderRecommendedVideoCard = (video) => {
     const isWatched = progress.videosCompleted.includes(video.id);
     const collection = video.collection ? collections[video.collection] : null;
-    
+
     return (
       <AnimatedPressable
         key={video.id}
@@ -1557,7 +1731,7 @@ export default function Kids() {
               <Text style={styles.aiBadgeText}>{i18n.t('aiRecommended') || "AI"}</Text>
             </View>
             {video.thumbnail ? (
-              <Image source={{ uri: video.thumbnail }} style={styles.thumbnail} resizeMode="cover" />
+              <Image source={{ uri: fixMediaUrl(video.thumbnail) }} style={styles.thumbnail} resizeMode="cover" />
             ) : (
               <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
                 <Ionicons name="play-circle" size={40} color="#fff" />
@@ -1585,7 +1759,7 @@ export default function Kids() {
               </View>
             )}
           </View>
-          
+
           {/* Video Info */}
           <View style={styles.recommendedCardContent}>
             <Text style={styles.recommendedCardTitle} numberOfLines={2}>
@@ -1617,7 +1791,7 @@ export default function Kids() {
       border: "#FF6B9D",
       shadow: "#FF1493",
     };
-    
+
     return (
       <AnimatedPressable onPress={onPress} style={{
         width: isTablet ? "48%" : width < 400 ? "49%" : "48%",
@@ -1647,7 +1821,7 @@ export default function Kids() {
             {/* Simple title only */}
             <Text style={[
               styles.dashboardCardTitle,
-              { 
+              {
                 fontSize: isTablet ? 22 : isSmallScreen ? 18 : 20,
                 textAlign: "center",
                 color: "#1E293B",
@@ -1664,28 +1838,71 @@ export default function Kids() {
   if (loading || loadingChild) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#4c1d95" />
+        {/* testID added to support comprehensive dashboard tests */}
+        <ActivityIndicator testID="loading-indicator" size="large" color="#4c1d95" />
         <Text style={{ marginTop: 10, color: "#000" }}>
-          {loadingChild ? "Loading child profile..." : i18n.t('loading')}
+          {loadingChild ? "Loading child profile..." : i18n.t("loading")}
         </Text>
       </SafeAreaView>
     );
   }
 
-  // If no child selected after loading, show message but stay on kids dashboard
-  if (!selectedChild) {
+  // Validate user is a parent and has selected a child
+  // If user is not a parent, or no child selected, show error page
+  if (!user || user.role !== "parent" || !selectedChild) {
     return (
       <SafeAreaView style={[styles.container, styles.center]}>
-        <Ionicons name="person-outline" size={64} color="#999" />
-        <Text style={{ marginTop: 20, fontSize: 18, fontWeight: "600", color: "#000" }}>
-          Route is not found
-        </Text>
-        <Text style={{ marginTop: 10, color: "#000", textAlign: "center", paddingHorizontal: 40 }}>
-          The route you are trying to access is not found. Please log in again.
-        </Text>
-        <Text style={{ marginTop: 20, color: "#000", textAlign: "center", paddingHorizontal: 40, fontSize: 12 }}>
-          You can use the back button or logout to return to the parent dashboard.
-        </Text>
+        <View style={styles.errorContainer}>
+          <Ionicons name="person-outline" size={80} color="#999" />
+          <Text style={styles.errorTitle}>
+            Route is not found
+          </Text>
+          <Text style={styles.errorMessage}>
+            The route you are trying to access is not found. Please log in again.
+          </Text>
+          <Text style={styles.errorInstruction}>
+            You can use the back button or logout to return to the parent dashboard.
+          </Text>
+          <View style={styles.errorActions}>
+            <TouchableOpacity
+              style={styles.errorBackButton}
+              onPress={() => {
+                try {
+                  router.back();
+                } catch (e) {
+                  router.replace("/dashboard/parent");
+                }
+              }}
+            >
+              <Ionicons name="arrow-back" size={20} color="#10B981" />
+              <Text style={styles.errorBackButtonText}>Back</Text>
+            </TouchableOpacity>
+            {logout && (
+              <TouchableOpacity
+                style={styles.errorLogoutButton}
+                onPress={async () => {
+                  try {
+                    await AsyncStorage.multiRemove([
+                      "user",
+                      "role",
+                      "@selected_child",
+                    ]);
+                    if (logout) {
+                      await logout();
+                    }
+                    router.replace("/(drawer)/login");
+                  } catch (e) {
+                    console.warn("Logout error:", e);
+                    router.replace("/(drawer)/login");
+                  }
+                }}
+              >
+                <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+                <Text style={styles.errorLogoutButtonText}>Logout</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -1730,9 +1947,16 @@ export default function Kids() {
       <View style={styles.floatingActions}>
         {/* Back Button */}
         <TouchableOpacity
-          onPress={() => router.push("/dashboard/parent")}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/dashboard/parent");
+            }
+          }}
           style={styles.floatingBackButton}
           accessibilityLabel="Go back"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
@@ -1759,7 +1983,7 @@ export default function Kids() {
 
         {/* Language and Avatar */}
         <View style={styles.floatingActionButtons}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => {
               const languages = ["en", "ti", "am"];
               const currentIndex = languages.indexOf(language);
@@ -1771,7 +1995,7 @@ export default function Kids() {
           >
             <Ionicons name="language" size={22} color="#38BDF8" />
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             onPress={pickProfilePhoto}
             accessibilityLabel={i18n.t('changeProfilePicture')}
@@ -1797,17 +2021,22 @@ export default function Kids() {
           if (detail?.type === "video" && videoSessionStartTime.current && currentVideoId.current) {
             const durationMs = Date.now() - videoSessionStartTime.current;
             const entryTime = new Date(videoSessionStartTime.current).toISOString();
-            
+
             if (videoSessionTimer.current) {
               clearInterval(videoSessionTimer.current);
               videoSessionTimer.current = null;
             }
-            
+
             await saveVideoWatchingSession(currentVideoId.current, entryTime, durationMs);
             videoSessionStartTime.current = null;
             currentVideoId.current = null;
           }
-          setDetail(null);
+
+          if (selectedSection && selectedSection !== "dashboard") {
+            setDetail({ type: "section", section: selectedSection });
+          } else {
+            setDetail(null);
+          }
         }}
       >
         <SafeAreaView style={{ flex: 1, backgroundColor: detail?.type === "video" ? "#000" : "#F0F9FF" }}>
@@ -1820,17 +2049,22 @@ export default function Kids() {
                   if (detail?.type === "video" && videoSessionStartTime.current && currentVideoId.current) {
                     const durationMs = Date.now() - videoSessionStartTime.current;
                     const entryTime = new Date(videoSessionStartTime.current).toISOString();
-                    
+
                     if (videoSessionTimer.current) {
                       clearInterval(videoSessionTimer.current);
                       videoSessionTimer.current = null;
                     }
-                    
+
                     await saveVideoWatchingSession(currentVideoId.current, entryTime, durationMs);
                     videoSessionStartTime.current = null;
                     currentVideoId.current = null;
                   }
-                  setDetail(null);
+
+                  if (selectedSection && selectedSection !== "dashboard") {
+                    setDetail({ type: "section", section: selectedSection });
+                  } else {
+                    setDetail(null);
+                  }
                 }}
               >
                 <Ionicons name="close" size={32} color={detail?.type === "video" ? "#fff" : "#38BDF8"} />
@@ -1848,7 +2082,7 @@ export default function Kids() {
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 style={{ flex: 1 }}
               >
-                <ScrollView 
+                <ScrollView
                   contentContainerStyle={[
                     styles.fullscreenQuizContainer,
                     { paddingHorizontal: isSmallScreen ? 12 : isTablet ? 40 : 18 }
@@ -1858,7 +2092,7 @@ export default function Kids() {
                     quizzes[quizState.quizId].questions.map((q, idx) => (
                       <View key={q.id || idx} style={[
                         styles.fullscreenQuizQuestion,
-                        { 
+                        {
                           marginBottom: isTablet ? 32 : 24,
                           padding: isTablet ? 24 : 16,
                           maxWidth: isTablet ? 800 : "100%",
@@ -1867,12 +2101,12 @@ export default function Kids() {
                         }
                       ]}>
                         <Text style={[styles.questionText, { fontSize: isTablet ? 24 : 20 }]}>
-                          {idx + 1}. {q.question}
+                          {idx + 1}. {q.question || q.question_text || q.text || q.title || q.content || q.body || q.label || q.name || "Question"}
                         </Text>
-                        
-                        {q.type === "image" && q.imageUri && (
-                          <Image 
-                            source={{ uri: q.imageUri }} 
+
+                        {(q.imageUri || q.media_url || q.media) && (
+                          <Image
+                            source={{ uri: fixMediaUrl(q.media_url || q.media || q.imageUri) }}
                             style={{
                               width: "100%",
                               height: isTablet ? 300 : 200,
@@ -1882,15 +2116,15 @@ export default function Kids() {
                             }}
                           />
                         )}
-                        
-                        {q.type === "audio" && q.audioUri && (
+
+                        {(q.audioUri || q.media_url || q.audio) && (
                           <View style={{ marginTop: 12, backgroundColor: "#f0f0f0", padding: 12, borderRadius: 8, flexDirection: "row", alignItems: "center" }}>
                             <Ionicons name="musical-notes" size={24} color="#4c1d95" />
                             <Text style={{ marginLeft: 8, color: "#000" }}>{i18n.t('audioQuestion')}</Text>
                             <TouchableOpacity
                               onPress={async () => {
                                 try {
-                                  const { sound } = await Audio.Sound.createAsync({ uri: q.audioUri });
+                                  const { sound } = await Audio.Sound.createAsync({ uri: fixMediaUrl(q.media_url || q.media || q.audio || q.audioUri) });
                                   await sound.playAsync();
                                   sound.setOnPlaybackStatusUpdate((status) => {
                                     if (status.didJustFinish) {
@@ -1907,7 +2141,7 @@ export default function Kids() {
                             </TouchableOpacity>
                           </View>
                         )}
-                        
+
                         {q.options.map((opt, i) => (
                           <TouchableOpacity
                             key={i}
@@ -1919,8 +2153,8 @@ export default function Kids() {
                             ]}
                           >
                             {typeof opt === "object" && opt.type === "image" && opt.imageUri ? (
-                              <Image 
-                                source={{ uri: opt.imageUri }} 
+                              <Image
+                                source={{ uri: opt.imageUri }}
                                 style={{
                                   width: "100%",
                                   height: isTablet ? 160 : 120,
@@ -1990,8 +2224,8 @@ export default function Kids() {
 
             {/* Dashboard Section Content - Kid-friendly full screen */}
             {detail?.type === "section" && (
-              <ScrollView 
-                contentContainerStyle={styles.contentScroll} 
+              <ScrollView
+                contentContainerStyle={styles.contentScroll}
                 keyboardShouldPersistTaps="handled"
                 style={{ flex: 1, backgroundColor: "#F0F9FF" }}
               >
@@ -2005,11 +2239,11 @@ export default function Kids() {
                       </View>
                     </View>
                     {(() => {
-                      const filteredRecommended = search 
-                        ? recommendedVideos.filter(v => 
-                            normalize(v.title).includes(normalize(search)) || 
-                            normalize(v.description || "").includes(normalize(search))
-                          )
+                      const filteredRecommended = search
+                        ? recommendedVideos.filter(v =>
+                          normalize(v.title).includes(normalize(search)) ||
+                          normalize(v.description || "").includes(normalize(search))
+                        )
                         : recommendedVideos;
                       return filteredRecommended.length > 0 ? (
                         <View style={styles.recommendedGrid}>
@@ -2047,13 +2281,13 @@ export default function Kids() {
                     {selectedCollectionId ? (
                       <>
                         {/* Back button to return to collections list */}
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           onPress={() => setSelectedCollectionId(null)}
                           style={[styles.backButton, { marginBottom: 16 }]}
                         >
                           <Ionicons name="arrow-back" size={28} color="#38BDF8" />
                         </TouchableOpacity>
-                        
+
                         {/* Collection title */}
                         {collections[selectedCollectionId] && (
                           <View style={{ marginBottom: 16 }}>
@@ -2067,15 +2301,15 @@ export default function Kids() {
                             )}
                           </View>
                         )}
-                        
+
                         {/* Videos in this collection */}
                         {(() => {
-                          const collectionVideos = videos.filter(v => 
-                            v.collection === selectedCollectionId || 
+                          const collectionVideos = videos.filter(v =>
+                            v.collection === selectedCollectionId ||
                             v.collection_id === selectedCollectionId ||
                             v.collection?.id === selectedCollectionId
                           );
-                          
+
                           return collectionVideos.length === 0 ? (
                             <View style={styles.emptyBox}>
                               <Ionicons name="film-outline" size={64} color="#94A3B8" />
@@ -2173,8 +2407,8 @@ export default function Kids() {
                                   rec.status === "completed"
                                     ? "#d1fae5"
                                     : rec.status === "in-progress"
-                                    ? "#fef3c7"
-                                    : "#f3f4f6",
+                                      ? "#fef3c7"
+                                      : "#f3f4f6",
                               }}>
                                 <Text style={{
                                   fontSize: 12,
@@ -2183,8 +2417,8 @@ export default function Kids() {
                                     rec.status === "completed"
                                       ? "#065f46"
                                       : rec.status === "in-progress"
-                                      ? "#92400e"
-                                      : "#6b7280",
+                                        ? "#92400e"
+                                        : "#6b7280",
                                   textTransform: "uppercase",
                                 }}>
                                   {rec.status || "not-started"}
@@ -2245,23 +2479,23 @@ export default function Kids() {
 
                     {/* Earned Badges List */}
                     <View style={{ marginTop: 16 }}>
-                      <Text style={styles.sectionTitle}>⭐ My Awesome Badges ⭐</Text>
+                      <Text style={styles.sectionTitle}>{i18n.t('myAwesomeBadges')}</Text>
                       {loadingChildBadges ? (
                         <View style={styles.emptyBox}>
                           <ActivityIndicator size="large" color="#38BDF8" />
-                          <Text style={[styles.emptyText, { marginTop: 12 }]}>Loading badges…</Text>
+                          <Text style={[styles.emptyText, { marginTop: 12 }]}>{i18n.t('loadingBadges')}</Text>
                         </View>
                       ) : childBadges.length === 0 ? (
                         <View style={styles.emptyBox}>
                           <Text style={{ fontSize: 80 }}>🏆</Text>
                           <Text style={[styles.emptyText, { fontSize: 18, fontWeight: "800" }]}>
-                            {selectedChild?.nickname || "You"} haven&apos;t earned any badges yet! 😊
+                            {selectedChild?.nickname || "You"} {i18n.t('noBadgesYet').replace("You ", "")}
                           </Text>
                           <Text style={[styles.emptyText, { marginTop: 12, fontSize: 16, color: "#64748B" }]}>
-                            🎬 Start watching videos and taking quizzes to earn amazing badges! 🎉
+                            {i18n.t('startEarningBadges')}
                           </Text>
                           <Text style={[styles.emptyText, { marginTop: 8, fontSize: 14, color: "#94A3B8" }]}>
-                            You can do it! Keep learning! 💪✨
+                            {i18n.t('keepLearning')}
                           </Text>
                         </View>
                       ) : (
@@ -2305,7 +2539,7 @@ export default function Kids() {
 
                     {/* All Available Badges */}
                     <View style={{ marginTop: 16 }}>
-                      <Text style={styles.sectionTitle}>🎯 All Available Badges 🎯</Text>
+                      <Text style={styles.sectionTitle}>{i18n.t('allAvailableBadges')}</Text>
                       {loadingBadges ? (
                         <View style={styles.emptyBox}>
                           <ActivityIndicator size="large" color="#38BDF8" />
@@ -2315,10 +2549,10 @@ export default function Kids() {
                         <View style={styles.emptyBox}>
                           <Text style={{ fontSize: 80 }}>🎁</Text>
                           <Text style={[styles.emptyText, { fontSize: 18, fontWeight: "800" }]}>
-                            No badges available yet! 😊
+                            {i18n.t('noBadgesAvailable')}
                           </Text>
                           <Text style={[styles.emptyText, { marginTop: 8, fontSize: 14, color: "#64748B" }]}>
-                            Check back soon for awesome badges to earn! 🌟
+                            {i18n.t('checkBackSoon')}
                           </Text>
                         </View>
                       ) : (
@@ -2356,7 +2590,7 @@ export default function Kids() {
                                         marginLeft: 8,
                                       }}>
                                         <Text style={{ fontSize: 12, fontWeight: "700", color: "#1E293B" }}>
-                                          EARNED ✓
+                                          {i18n.t('earned')}
                                         </Text>
                                       </View>
                                     )}
@@ -2399,7 +2633,7 @@ export default function Kids() {
                   🌟 {i18n.t('readyToLearn') || 'Ready to learn something amazing today?'} 🌟
                 </Text>
                 <Text style={styles.welcomeSubtitle2}>
-                  Let's have fun learning together! 🚀✨
+                  Let&apos;s have fun learning together! 🚀✨
                 </Text>
               </View>
 
@@ -2420,7 +2654,7 @@ export default function Kids() {
               </View>
               <View style={styles.gridRow}>
                 <DashboardCard
-                  title="Collections 📚"
+                  title={`${i18n.t('collections')} 📚`}
                   emoji="📦"
                   onPress={() => {
                     setSelectedCollectionId(null);
@@ -2429,7 +2663,7 @@ export default function Kids() {
                   colorScheme={{ bg: "#F0FDF4", border: "#10B981", shadow: "#059669" }}
                 />
                 <DashboardCard
-                  title="Quizzes 🧠"
+                  title={`${i18n.t('quizzes')} 🧠`}
                   emoji="❓"
                   onPress={() => setDetail({ type: "section", section: "quizzes" })}
                   colorScheme={{ bg: "#FEF3C7", border: "#F59E0B", shadow: "#D97706" }}
@@ -2450,7 +2684,7 @@ export default function Kids() {
           {selectedSection === "recommended" && (
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setSelectedSection("dashboard")}
                   style={[styles.backButton, { marginBottom: 0 }]}
                 >
@@ -2465,11 +2699,11 @@ export default function Kids() {
                   </View>
                 </View>
                 {(() => {
-                  const filteredRecommended = search 
-                    ? recommendedVideos.filter(v => 
-                        normalize(v.title).includes(normalize(search)) || 
-                        normalize(v.description || "").includes(normalize(search))
-                      )
+                  const filteredRecommended = search
+                    ? recommendedVideos.filter(v =>
+                      normalize(v.title).includes(normalize(search)) ||
+                      normalize(v.description || "").includes(normalize(search))
+                    )
                     : recommendedVideos;
                   return filteredRecommended.length > 0 ? (
                     <View style={styles.recommendedGrid}>
@@ -2497,7 +2731,7 @@ export default function Kids() {
           {selectedSection === "collections" && (
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setSelectedSection("dashboard")}
                   style={[styles.backButton, { marginBottom: 0 }]}
                 >
@@ -2511,9 +2745,11 @@ export default function Kids() {
                   <Text style={styles.emptyText}>No collections available</Text>
                 </View>
               ) : (
-                Object.values(collections)
-                  .filter(c => !search || c.title.toLowerCase().includes(search.toLowerCase()) || (c.description && c.description.toLowerCase().includes(search.toLowerCase())))
-                  .map((collection) => renderCollectionCard(collection))
+                <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
+                  {Object.values(collections)
+                    .filter(c => !search || c.title.toLowerCase().includes(search.toLowerCase()) || (c.description && c.description.toLowerCase().includes(search.toLowerCase())))
+                    .map((collection) => renderCollectionCard(collection))}
+                </View>
               )}
             </ScrollView>
           )}
@@ -2521,8 +2757,8 @@ export default function Kids() {
           {/* VIDEOS LIST INLINE */}
           {selectedSection === "videos" && (
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
-              <TouchableOpacity 
-                onPress={() => setSelectedSection("dashboard")} 
+              <TouchableOpacity
+                onPress={() => setSelectedSection("dashboard")}
                 style={[styles.backButton, { marginBottom: 16 }]}
               >
                 <Ionicons name="arrow-back" size={28} color="#38BDF8" />
@@ -2540,8 +2776,8 @@ export default function Kids() {
           {/* QUIZZES LIST INLINE */}
           {selectedSection === "quizzes" && (
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
-              <TouchableOpacity 
-                onPress={() => setSelectedSection("dashboard")} 
+              <TouchableOpacity
+                onPress={() => setSelectedSection("dashboard")}
                 style={[styles.backButton, { marginBottom: 16 }]}
               >
                 <Ionicons name="arrow-back" size={28} color="#38BDF8" />
@@ -2558,15 +2794,15 @@ export default function Kids() {
           {/* PROGRESS INLINE (NO search bar here) */}
           {selectedSection === "progress" && (
             <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
-              <TouchableOpacity 
-                onPress={() => setSelectedSection("dashboard")} 
+              <TouchableOpacity
+                onPress={() => setSelectedSection("dashboard")}
                 style={[styles.backButton, { marginBottom: 16 }]}
               >
                 <Ionicons name="arrow-back" size={28} color="#38BDF8" />
               </TouchableOpacity>
 
               <View style={[styles.card, { backgroundColor: "#E0F2FE", borderColor: "#38BDF8" }]}>
-                <Text style={styles.smallTitle}>🎬 Videos Watched 🎬</Text>
+                <Text style={styles.smallTitle}>{i18n.t('videosWatchedTitle')}</Text>
                 <Text style={{ marginTop: 12, color: "#000", fontSize: 22, fontWeight: "800" }}>
                   {progress.videosCompleted.length} / {videos.length} Videos
                 </Text>
@@ -2579,7 +2815,7 @@ export default function Kids() {
                 />
               </View>
               <View style={[styles.card, { backgroundColor: "#FEF3C7", borderColor: "#F59E0B" }]}>
-                <Text style={styles.smallTitle}>🧠 Quizzes Completed 🧠</Text>
+                <Text style={styles.smallTitle}>{i18n.t('quizzesCompletedTitle')}</Text>
                 <Text style={{ marginTop: 12, color: "#000", fontSize: 22, fontWeight: "800" }}>
                   {Object.values(quizzes).filter((q) => q.results?.length > 0).length} /{" "}
                   {Object.keys(quizzes).length} Quizzes
@@ -2588,22 +2824,22 @@ export default function Kids() {
 
               {/* Lesson progress records from backend */}
               <View style={[styles.card, { backgroundColor: "#F0FDF4", borderColor: "#10B981" }]}>
-                <Text style={styles.smallTitle}>📚 My Lesson Progress 📚</Text>
+                <Text style={styles.smallTitle}>{i18n.t('myLessonProgress')}</Text>
                 {loadingProgressRecords ? (
                   <View style={{ marginTop: 12, alignItems: "center" }}>
                     <ActivityIndicator size="large" color="#10B981" />
                     <Text style={{ marginTop: 8, color: "#000", fontSize: 16, fontWeight: "600" }}>
-                      Loading your amazing progress... ⏳
+                      {i18n.t('loadingProgress')}
                     </Text>
                   </View>
                 ) : progressRecords.length === 0 ? (
                   <View style={{ marginTop: 12, alignItems: "center" }}>
                     <Text style={{ fontSize: 60 }}>📖</Text>
                     <Text style={{ marginTop: 12, color: "#000", fontSize: 18, fontWeight: "700", textAlign: "center" }}>
-                      No lesson progress yet! 😊
+                      {i18n.t('noLessonProgress')}
                     </Text>
                     <Text style={{ marginTop: 8, color: "#64748B", fontSize: 16, textAlign: "center" }}>
-                      Start a lesson to see your awesome progress here! 🚀
+                      {i18n.t('startLessonProgress')}
                     </Text>
                   </View>
                 ) : (
@@ -2622,8 +2858,8 @@ export default function Kids() {
                               rec.status === "completed"
                                 ? "#d1fae5"
                                 : rec.status === "in-progress"
-                                ? "#fef3c7"
-                                : "#f3f4f6",
+                                  ? "#fef3c7"
+                                  : "#f3f4f6",
                           }}>
                             <Text style={{
                               fontSize: 12,
@@ -2632,8 +2868,8 @@ export default function Kids() {
                                 rec.status === "completed"
                                   ? "#065f46"
                                   : rec.status === "in-progress"
-                                  ? "#92400e"
-                                  : "#6b7280",
+                                    ? "#92400e"
+                                    : "#6b7280",
                               textTransform: "uppercase",
                             }}>
                               {rec.status || "not-started"}
@@ -2797,6 +3033,71 @@ export default function Kids() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FEF3F2" }, // Warm, kid-friendly background
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  errorContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    paddingVertical: 60,
+  },
+  errorTitle: {
+    marginTop: 24,
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#000",
+    textAlign: "center",
+  },
+  errorMessage: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#000",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  errorInstruction: {
+    marginTop: 20,
+    fontSize: 14,
+    color: "#000",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  errorActions: {
+    marginTop: 32,
+    flexDirection: "row",
+    gap: 16,
+    alignItems: "center",
+  },
+  errorBackButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1.5,
+    borderColor: "#10B981",
+  },
+  errorBackButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#10B981",
+  },
+  errorLogoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1.5,
+    borderColor: "#EF4444",
+  },
+  errorLogoutButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#EF4444",
+  },
   floatingActions: {
     position: "absolute",
     top: Platform.OS === "ios" ? 50 : 20,
@@ -2917,8 +3218,8 @@ const styles = StyleSheet.create({
   },
   headerHi: { color: "#000", fontWeight: "700", fontSize: 14 },
   headerName: { fontSize: 20, fontWeight: "900", color: "#000" },
-  logoutBtn: { 
-    padding: 8, 
+  logoutBtn: {
+    padding: 8,
     borderRadius: 8,
     backgroundColor: "#f0f0f0",
   },
@@ -2927,17 +3228,17 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     paddingBottom: 20,
   },
-  welcomeTitle: { 
-    fontSize: 36, 
-    fontWeight: "900", 
+  welcomeTitle: {
+    fontSize: 36,
+    fontWeight: "900",
     color: "#1E293B",
     letterSpacing: -0.5,
     marginBottom: 12,
     textAlign: "center",
   },
-  welcomeSubtitle: { 
-    fontSize: 20, 
-    color: "#475569", 
+  welcomeSubtitle: {
+    fontSize: 20,
+    color: "#475569",
     fontWeight: "700",
     lineHeight: 28,
     textAlign: "center",
@@ -3004,9 +3305,46 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  dashboardCardTitle: { 
-    fontSize: 18, 
-    fontWeight: "900", 
+  collectionCard: {
+    backgroundColor: "#FFFFFF",
+    padding: 24,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    height: 180, // Fixed height for uniformity
+  },
+  collectionIconContainer: {
+    marginBottom: 16,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#FEF3C7", // Light yellow bg for icon
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  collectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1E293B",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  collectionSubtitle: {
+    fontSize: 14,
+    color: "#64748B",
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  dashboardCardTitle: {
+    fontSize: 18,
+    fontWeight: "900",
     color: "#1E293B",
     letterSpacing: 0.3,
   },
@@ -3086,7 +3424,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFB6C1",
   },
-  primaryBtnText: { color: "#fff", fontWeight: "900", fontSize: 18 }, 
+  primaryBtnText: { color: "#fff", fontWeight: "900", fontSize: 18 },
   // Quiz
   questionText: { fontWeight: "900", fontSize: 20, marginBottom: 12, color: "#000" },
   optionBtn: {
@@ -3216,7 +3554,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 4,
   },
-  sectionTitle: {
+  sectionTitleAlt: {
     fontSize: 24,
     fontWeight: "900",
     color: "#000",

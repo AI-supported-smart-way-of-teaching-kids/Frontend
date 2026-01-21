@@ -17,6 +17,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useUser } from "../contexts/UserContext";
 import { LinearGradient } from "expo-linear-gradient";
+import * as profilesApi from "../src/services/profilesApi";
+import { useTranslation } from "react-i18next";
 
 const STORAGE = {
   TEACHER_PROFILES: "@app_teacher_profiles_v1",
@@ -25,25 +27,51 @@ const STORAGE = {
 export default function TeacherProfileSetup() {
   const router = useRouter();
   const { user } = useUser();
+  const { t } = useTranslation();
   const [bio, setBio] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleCreateProfile = async () => {
     if (!bio.trim()) {
-      Alert.alert("Bio Required", "Please enter your bio to complete your profile.");
+      Alert.alert(t('bioRequired'), t('enterBioToComplete'));
       return;
     }
 
     if (!user || user.role !== "teacher") {
-      Alert.alert("Error", "You must be logged in as a teacher to create a profile.");
-      router.replace("/(drawer)/(tabs)/login");
+      Alert.alert(t('error'), "You must be logged in as a teacher to create a profile.");
+      router.replace("/(drawer)/login");
       return;
     }
 
     setLoading(true);
 
     try {
-      const teacherProfile = {
+      // Create profile payload for backend
+      const profilePayload = {
+        bio: bio.trim(),
+      };
+
+      let backendProfile = null;
+
+      // Try to create profile on backend first
+      try {
+        const response = await profilesApi.createTeacher(profilePayload);
+        // If we reach here, it's a success
+        backendProfile = response;
+        console.log("Teacher profile created on backend:", backendProfile);
+      } catch (backendError) {
+        // Handle 200/201 in catch block just in case
+        if (backendError.response?.status === 200 || backendError.response?.status === 201) {
+          backendProfile = backendError.response.data;
+        } else {
+          console.warn("Failed to create teacher profile on backend:", backendError);
+        }
+      }
+
+      // Create local profile object (merge backend data if available)
+      const teacherProfile = backendProfile || {
+        id: user.id,
+        user: user.id,
         userId: user.id,
         email: user.email,
         name: user.name,
@@ -52,10 +80,20 @@ export default function TeacherProfileSetup() {
         created_at: new Date().toISOString(),
       };
 
-      // Load existing teacher profiles
+      // If backend profile exists, merge its data
+      if (backendProfile) {
+        teacherProfile.id = backendProfile.id;
+        teacherProfile.userId = user.id;
+        teacherProfile.email = user.email || backendProfile.email;
+        teacherProfile.name = user.name || backendProfile.name;
+        teacherProfile.created_at = backendProfile.created_at || new Date().toISOString();
+        teacherProfile.uploaded_count = backendProfile.uploaded_count || 0;
+      }
+
+      // Save to local storage for offline access
       const storedProfiles = await AsyncStorage.getItem(STORAGE.TEACHER_PROFILES);
       let profiles = {};
-      
+
       if (storedProfiles) {
         try {
           profiles = JSON.parse(storedProfiles);
@@ -73,21 +111,38 @@ export default function TeacherProfileSetup() {
       await AsyncStorage.setItem("@current_teacher_profile", JSON.stringify(teacherProfile));
 
       setLoading(false);
-      
-      Alert.alert(
-        "Profile Created!",
-        "Your teacher profile has been created successfully.",
-        [
-          {
-            text: "Continue",
-            onPress: () => router.replace("/dashboard/teacher"),
-          },
-        ]
-      );
+
+      console.log("Profile created successfully, attempting navigation...");
+
+      // Navigate immediately without Alert to avoid UI blocking issues
+      try {
+        // Force a small delay to ensure state updates settle
+        setTimeout(() => {
+          console.log("Executing navigation replace...");
+          router.replace("/dashboard/teacher");
+        }, 100);
+      } catch (e) {
+        console.error("Navigation error:", e);
+        // Fallback attempt
+        router.push("/dashboard/teacher");
+      }
     } catch (error) {
       console.error("Error creating teacher profile:", error);
       setLoading(false);
-      Alert.alert("Error", "Failed to create profile. Please try again.");
+
+      // Extract error message
+      let errorMessage = t('failedToSaveProfile');
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.bio) {
+        errorMessage = Array.isArray(error.response.data.bio)
+          ? error.response.data.bio[0]
+          : error.response.data.bio;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      Alert.alert(t('error'), errorMessage);
     }
   };
 
@@ -110,9 +165,9 @@ export default function TeacherProfileSetup() {
               <View style={styles.iconContainer}>
                 <Ionicons name="school" size={48} color="#2563EB" />
               </View>
-              <Text style={styles.title}>Complete Your Teacher Profile</Text>
+              <Text style={styles.title}>{t('completeTeacherProfile')}</Text>
               <Text style={styles.subtitle}>
-                Tell us about yourself to get started
+                {t('tellUsAboutYourself')}
               </Text>
             </View>
 
@@ -120,11 +175,11 @@ export default function TeacherProfileSetup() {
             <View style={styles.formContainer}>
               <View style={styles.inputContainer}>
                 <Text style={styles.label}>
-                  <Ionicons name="document-text" size={18} color="#2563EB" /> Bio
+                  <Ionicons name="document-text" size={18} color="#2563EB" /> {t('bio')}
                 </Text>
                 <TextInput
                   style={styles.bioInput}
-                  placeholder="Tell us about your teaching experience, qualifications, and interests..."
+                  placeholder={t('bioPlaceholder')}
                   placeholderTextColor="#999"
                   value={bio}
                   onChangeText={setBio}
@@ -155,7 +210,7 @@ export default function TeacherProfileSetup() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
-                    <Text style={styles.submitButtonText}>Create Profile</Text>
+                    <Text style={styles.submitButtonText}>{t('createProfile')}</Text>
                     <Ionicons name="arrow-forward" size={20} color="#fff" />
                   </>
                 )}
@@ -166,16 +221,32 @@ export default function TeacherProfileSetup() {
                 style={styles.skipButton}
                 onPress={() => {
                   Alert.alert(
-                    "Skip Profile?",
-                    "You can create your profile later, but some features may be limited.",
+                    t('skipProfileConfirm'),
+                    t('skipProfileMessage'),
                     [
-                      { text: "Cancel", style: "cancel" },
+                      { text: t('cancel'), style: "cancel" },
                       {
-                        text: "Skip",
+                        text: t('skip'),
                         onPress: async () => {
                           // Create minimal profile
                           try {
-                            const teacherProfile = {
+                            setLoading(true);
+
+                            let backendProfile = null;
+
+                            // Try to create minimal profile on backend
+                            try {
+                              backendProfile = await profilesApi.createTeacher({ bio: "" });
+                              console.log("Minimal teacher profile created on backend:", backendProfile);
+                            } catch (backendError) {
+                              console.warn("Failed to create minimal teacher profile on backend:", backendError);
+                              // Continue with local storage fallback
+                            }
+
+                            // Create local profile object
+                            const teacherProfile = backendProfile || {
+                              id: user?.id,
+                              user: user?.id,
                               userId: user?.id,
                               email: user?.email,
                               name: user?.name,
@@ -183,14 +254,29 @@ export default function TeacherProfileSetup() {
                               uploaded_count: 0,
                               created_at: new Date().toISOString(),
                             };
+
+                            // If backend profile exists, merge its data
+                            if (backendProfile) {
+                              teacherProfile.id = backendProfile.id;
+                              teacherProfile.userId = user?.id;
+                              teacherProfile.email = user?.email || backendProfile.email;
+                              teacherProfile.name = user?.name || backendProfile.name;
+                              teacherProfile.created_at = backendProfile.created_at || new Date().toISOString();
+                              teacherProfile.uploaded_count = backendProfile.uploaded_count || 0;
+                            }
+
                             const storedProfiles = await AsyncStorage.getItem(STORAGE.TEACHER_PROFILES);
                             let profiles = storedProfiles ? JSON.parse(storedProfiles) : {};
                             profiles[user?.id || ""] = teacherProfile;
                             await AsyncStorage.setItem(STORAGE.TEACHER_PROFILES, JSON.stringify(profiles));
                             await AsyncStorage.setItem("@current_teacher_profile", JSON.stringify(teacherProfile));
+
+                            setLoading(false);
                             router.replace("/dashboard/teacher");
                           } catch (e) {
                             console.error("Error creating minimal profile:", e);
+                            setLoading(false);
+                            Alert.alert(t('error'), t('failedToSaveProfile'));
                           }
                         },
                       },
@@ -198,7 +284,7 @@ export default function TeacherProfileSetup() {
                   );
                 }}
               >
-                <Text style={styles.skipButtonText}>Skip for now</Text>
+                <Text style={styles.skipButtonText}>{t('skipForNow')}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>

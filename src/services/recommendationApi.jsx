@@ -3,17 +3,15 @@ import api from "../api";
 /**
  * Fetch AI recommendations for the kids dashboard.
  * Optionally scoped to a specific child.
+ * Uses /api/ai/ml/recommendations/ endpoint (baseURL already includes /api).
  */
 export const getRecommendations = async ({ childId } = {}) => {
-  const params = {};
-
-  // Many backends expect either `child` or `child_id` – support both defensively.
-  if (childId) {
-    params.child = childId;
-    params.child_id = childId;
+  if (!childId) {
+    throw new Error("Child ID is required for recommendations");
   }
 
-  const response = await api.get("/ai/recommendations/", { params });
+  // Use /ai/ml/recommendations/ endpoint (baseURL already includes /api)
+  const response = await api.get(`ai/ml/recommendations/`, { params: { child_id: childId } });
 
   // Normalise response to an array
   if (Array.isArray(response.data)) {
@@ -32,7 +30,18 @@ export const getRecommendations = async ({ childId } = {}) => {
  */
 export const getRecommendation = async (id) => {
   if (!id) throw new Error("Recommendation ID is required");
-  const response = await api.get(`/ai/recommendations/${id}/`);
+  const response = await api.get(`ai/recommendations/${id}/`);
+  return response.data;
+};
+
+/**
+ * Fetch real-time status of ML recommendations for a child.
+ * @param {number|string} childId - The ID of the child.
+ */
+export const getMLRealtimeStatus = async (childId) => {
+  const response = await api.get('ai/ml/recommendations/realtime-status/', {
+    params: { child_id: childId },
+  });
   return response.data;
 };
 

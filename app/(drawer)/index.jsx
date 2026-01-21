@@ -69,11 +69,7 @@ const BREAKPOINTS = {
   large: 1024,
 };
 
-// Set to true and provide a Lottie source to enable Lottie animation
 const ENABLE_LOTTIE = false;
-// Uncomment and provide path when you have a Lottie file:
-// Example: const LOTTIE_SOURCE = require('@/assets/animations/kid-character.json');
-const LOTTIE_SOURCE = null; // Replace with your Lottie file when ready
 
 export default function Index() {
   const router = useRouter();

@@ -14,36 +14,36 @@ import api from "../api";
 // ========== BADGES ==========
 
 export const getBadges = async (params = {}) => {
-  const res = await api.get("/progress/badges/", { params });
+  const res = await api.get("progress/badges/", { params });
   return res.data;
 };
 
 export const getBadge = async (id) => {
-  const res = await api.get(`/progress/badges/${id}/`);
+  const res = await api.get(`progress/badges/${id}/`);
   return res.data;
 };
 
 // ========== CHILD BADGES ==========
 
 export const getChildBadges = async (params = {}) => {
-  const res = await api.get("/progress/child-badges/", { params });
+  const res = await api.get("progress/child-badges/", { params });
   return res.data;
 };
 
 export const getChildBadge = async (id) => {
-  const res = await api.get(`/progress/child-badges/${id}/`);
+  const res = await api.get(`progress/child-badges/${id}/`);
   return res.data;
 };
 
 // ========== PROGRESS ==========
 
 export const getProgress = async (params = {}) => {
-  const res = await api.get("/progress/progress/", { params });
+  const res = await api.get("progress/progress/", { params });
   return res.data;
 };
 
 export const getProgressItem = async (id) => {
-  const res = await api.get(`/progress/progress/${id}/`);
+  const res = await api.get(`progress/progress/${id}/`);
   return res.data;
 };
 

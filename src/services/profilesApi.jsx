@@ -1,148 +1,218 @@
 import api from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// ========== AUTH ==========
+// =====================
+// AUTH
+// =====================
 
-/**
- * Login and receive JWT tokens + user info.
- * Expects backend at POST /api/profiles/auth/login/
- */
 export const login = async (credentials) => {
-  const response = await api.post("/profiles/auth/login/", credentials);
+  // POST /api/profiles/auth/login/
+  const response = await api.post("profiles/auth/login/", credentials);
   const data = response.data || {};
 
-  // Common shape: { access, refresh, user }
-  if (data.access) {
-    await AsyncStorage.setItem("access", data.access);
-  }
-  if (data.refresh) {
-    await AsyncStorage.setItem("refresh", data.refresh);
-  }
-  if (data.user) {
-    await AsyncStorage.setItem("user", JSON.stringify(data.user));
-  }
+  if (data.access) await AsyncStorage.setItem("access", data.access);
+  if (data.refresh) await AsyncStorage.setItem("refresh", data.refresh);
+  if (data.user) await AsyncStorage.setItem("user", JSON.stringify(data.user));
 
   return data;
 };
 
-/**
- * Refresh access token using refresh token.
- * POST /api/profiles/auth/refresh/
- */
-export const refreshToken = async (refresh) => {
-  const response = await api.post("/profiles/auth/refresh/", { refresh });
-  const data = response.data || {};
-  if (data.access) {
-    await AsyncStorage.setItem("access", data.access);
-  }
-  return data;
-};
-
-/**
- * Register a new user (parent/teacher).
- * POST /api/profiles/auth/register/
- */
 export const register = async (payload) => {
-  const response = await api.post("/profiles/auth/register/", payload);
+  // POST /api/profiles/users/
+  const response = await api.post("/profiles/users/", payload);
   return response.data;
 };
 
-// ========== CHILDREN ==========
+export const refreshToken = async (refresh) => {
+  // POST /api/profiles/auth/refresh/
+  const response = await api.post("profiles/auth/refresh/", { refresh });
+  return response.data;
+};
+
+// =====================
+// CHILDREN (UUID-based)
+// =====================
 
 export const getChildren = async (params = {}) => {
-  const response = await api.get("/profiles/children/", { params });
+  // GET /api/profiles/children/
+  const response = await api.get("profiles/children/", { params });
   return response.data;
 };
 
 export const createChild = async (payload) => {
-  const response = await api.post("/profiles/children/", payload);
+  // POST /api/profiles/children/
+  console.log("createChild payload:", payload);
+
+  try {
+    const response = await api.post("profiles/children/", payload);
+    const child = response.data;
+
+    // ✅ Store active child UUID automatically
+    if (child?.uuid) {
+      await AsyncStorage.setItem("activeChildUUID", child.uuid);
+    }
+
+    return child;
+  } catch (error) {
+    console.error("createChild error:", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+export const getChild = async (uuid) => {
+  // GET /api/profiles/children/{uuid}/
+  try {
+    const response = await api.get(`profiles/children/${uuid}/`);
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 404) return null;
+    throw error;
+  }
+};
+
+export const updateChild = async (uuid, payload) => {
+  // PUT /api/profiles/children/{uuid}/
+  const response = await api.put(`profiles/children/${uuid}/`, payload);
   return response.data;
 };
 
-export const getChild = async (id) => {
-  const response = await api.get(`/profiles/children/${id}/`);
+export const patchChild = async (uuid, payload) => {
+  // PATCH /api/profiles/children/{uuid}/
+  const response = await api.patch(`profiles/children/${uuid}/`, payload);
   return response.data;
 };
 
-export const updateChild = async (id, payload) => {
-  const response = await api.put(`/profiles/children/${id}/`, payload);
+export const deleteChild = async (uuid) => {
+  // DELETE /api/profiles/children/{uuid}/
+  const response = await api.get(`profiles/children/${uuid}/progress/`);
   return response.data;
 };
 
-export const patchChild = async (id, payload) => {
-  const response = await api.patch(`/profiles/children/${id}/`, payload);
+export const getChildProgress = async (uuid) => {
+  // GET /api/profiles/children/{uuid}/progress/
+  const response = await api.get(`profiles/children/${uuid}/progress/`);
   return response.data;
 };
 
-export const deleteChild = async (id) => {
-  const response = await api.delete(`/profiles/children/${id}/`);
-  return response.data;
+// =====================
+// ACTIVE CHILD HELPERS
+// =====================
+
+export const getActiveChildUUID = async () => {
+  return await AsyncStorage.getItem("activeChildUUID");
 };
 
-export const getChildProgress = async (id) => {
-  const response = await api.get(`/profiles/children/${id}/progress/`);
-  return response.data;
+export const clearActiveChildUUID = async () => {
+  await AsyncStorage.removeItem("activeChildUUID");
 };
 
-// ========== TEACHERS ==========
+// =====================
+// TEACHERS
+// =====================
 
 export const getTeachers = async (params = {}) => {
-  const response = await api.get("/profiles/teachers/", { params });
+  // GET /api/profiles/teachers/
+  const response = await api.get("profiles/teachers/", { params });
   return response.data;
 };
 
-export const getTeacher = async (id) => {
-  const response = await api.get(`/profiles/teachers/${id}/`);
-  return response.data;
+export const getTeacher = async (teacherId) => {
+  // GET /api/profiles/teachers/me/
+  try {
+    const response = await api.get(`profiles/teachers/me/`);
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 404) return null;
+    throw error;
+  }
 };
 
-// ========== USERS ==========
+export const createTeacher = async (payload) => {
+  // POST /api/profiles/teachers/
+  try {
+    const response = await api.post("profiles/teachers/", payload);
+    return response.data;
+  } catch (error) {
+    console.error("createTeacher error:", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+export const updateTeacher = async (payload) => {
+  // PUT /api/profiles/teachers/me/
+  try {
+    const response = await api.put("profiles/teachers/me/", payload);
+    return response.data;
+  } catch (error) {
+    console.error("updateTeacher error:", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+export const patchTeacher = async (payload) => {
+  // PATCH /api/profiles/teachers/me/
+  try {
+    const response = await api.patch("profiles/teachers/me/", payload);
+    return response.data;
+  } catch (error) {
+    console.error("patchTeacher error:", error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// =====================
+// USERS
+// =====================
 
 export const getUsers = async (params = {}) => {
-  const response = await api.get("/profiles/users/", { params });
+  // GET /api/profiles/users/
+  const response = await api.get("profiles/users/", { params });
   return response.data;
 };
 
 export const createUser = async (payload) => {
+  // POST /api/profiles/users/
   const response = await api.post("/profiles/users/", payload);
   return response.data;
 };
 
 export const getUser = async (id) => {
-  const response = await api.get(`/profiles/users/${id}/`);
-  return response.data;
+  // GET /api/profiles/users/{id}/
+  try {
+    const response = await api.get(`profiles/users/${id}/`);
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 404) return null;
+    throw error;
+  }
 };
 
 export const updateUser = async (id, payload) => {
-  const response = await api.put(`/profiles/users/${id}/`, payload);
+  // PUT /api/profiles/users/{id}/
+  const response = await api.put(`profiles/users/${id}/`, payload);
   return response.data;
 };
 
 export const patchUser = async (id, payload) => {
-  const response = await api.patch(`/profiles/users/${id}/`, payload);
+  // PATCH /api/profiles/users/{id}/
+  const response = await api.patch(`profiles/users/${id}/`, payload);
   return response.data;
 };
 
 export const deleteUser = async (id) => {
-  const response = await api.delete(`/profiles/users/${id}/`);
+  // DELETE /api/profiles/users/{id}/
+  const response = await api.delete(`profiles/users/${id}/`);
   return response.data;
 };
 
-/**
- * Convenience: GET /api/profiles/users/profile/
- * Returns the current authenticated user's profile.
- */
-export const getCurrentUserProfile = async () => {
-  const response = await api.get("/profiles/users/profile/");
+export const getUserProfile = async () => {
+  // GET /api/profiles/users/profile/
+  const response = await api.get("profiles/users/profile/");
   return response.data;
 };
 
-/**
- * Convenience: PUT /api/profiles/users/profile/
- */
-export const updateCurrentUserProfile = async (payload) => {
-  const response = await api.put("/profiles/users/profile/", payload);
+export const updateUserProfile = async (payload) => {
+  // PUT /api/profiles/users/profile/
+  const response = await api.put("profiles/users/profile/", payload);
   return response.data;
 };
-
-

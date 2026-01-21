@@ -12,21 +12,40 @@ import api from "../api";
 // ========== AUDIT LOGS ==========
 
 export const getAuditLogs = async (params = {}) => {
-  const res = await api.get("/core/audit-logs/", { params });
+  const res = await api.get("core/audit-logs/", { params });
   return res.data;
 };
 
 export const getAuditLog = async (id) => {
-  const res = await api.get(`/core/audit-logs/${id}/`);
+  const res = await api.get(`core/audit-logs/${id}/`);
   return res.data;
 };
 
 // ========== HEALTH ==========
 
 export const getHealth = async () => {
-  const res = await api.get("/core/health/");
+  const res = await api.get("core/health/");
   return res.data;
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

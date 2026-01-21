@@ -1,12 +1,12 @@
 // Parent Dashboard
-import React, { useEffect, useState, useRef } from "react";
-import {View,Text,TextInput,TouchableOpacity,ScrollView,StyleSheet,Alert,ActivityIndicator,Image,Animated,Platform,KeyboardAvoidingView,Modal,
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator, Image, Platform, KeyboardAvoidingView, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import i18n from "../../i18n";
 import { useLanguage } from "../../contexts/LanguageContext";
@@ -45,28 +45,18 @@ export default function ParentDashboard() {
   const [editingChildId, setEditingChildId] = useState(null);
   const [showLearningLevelModal, setShowLearningLevelModal] = useState(false);
 
-  // Load children from storage
-  useEffect(() => {
-    loadChildren();
-  }, []);
-
-  useFocusEffect(
-    React.useCallback(() => {
-      loadChildren();
-    }, [])
-  );
-
-  const loadChildren = async () => {
+  // Load selected child from AsyncStorage
+  const loadChildren = useCallback(async () => {
     try {
       if (!user?.id) {
         setLoading(false);
-        return;
+        return [];
       }
 
       // Load children from backend API
       try {
         const response = await profilesApi.getChildren({ parent: user.id });
-        
+
         // Handle different response formats
         let childrenList = [];
         if (Array.isArray(response)) {
@@ -76,11 +66,38 @@ export default function ParentDashboard() {
         } else if (response.data && Array.isArray(response.data)) {
           childrenList = response.data;
         }
-        
-        setChildren(childrenList);
 
-        // Load progress for all children from backend
-        const progressPromises = childrenList.map(async (child) => {
+        // Normalize children: map uuid to id if uuid exists, and ensure id field exists
+        const normalizedChildren = childrenList.map((child) => {
+          if (!child) return null;
+          // Backend uses 'uuid' instead of 'id', so map it
+          if (child.uuid && !child.id) {
+            child.id = child.uuid;
+          }
+          // Also normalize field names for consistency
+          if (child.learning_level && !child.learningLevel) {
+            child.learningLevel = child.learning_level.toUpperCase();
+          }
+          if (child.parent_phone && !child.parentPhone) {
+            child.parentPhone = child.parent_phone;
+          }
+          if (child.avatar_url && !child.avatarUrl) {
+            child.avatarUrl = child.avatar_url;
+          }
+          return child;
+        }).filter((child) => {
+          // Filter out any children without valid IDs
+          if (!child || !child.id) {
+            console.warn("Child without ID/UUID found in response:", child);
+            return false;
+          }
+          return true;
+        });
+
+        setChildren(normalizedChildren);
+
+        // Load progress for all children from backend (using normalized children)
+        const progressPromises = normalizedChildren.map(async (child) => {
           try {
             const progressData = await profilesApi.getChildProgress(child.id);
             return { [child.id]: progressData };
@@ -89,10 +106,12 @@ export default function ParentDashboard() {
             return { [child.id]: {} };
           }
         });
-        
+
         const progressResults = await Promise.all(progressPromises);
         const allProgress = progressResults.reduce((acc, curr) => ({ ...acc, ...curr }), {});
         setChildProgress(allProgress);
+
+        return normalizedChildren; // Return the loaded children
       } catch (apiError) {
         console.warn("Failed to load children from backend, falling back to local storage:", apiError);
         // Fallback to local storage
@@ -105,40 +124,38 @@ export default function ParentDashboard() {
           const allChildren = JSON.parse(storedChildren);
           const parentChildren = allChildren[user.id] || [];
           setChildren(parentChildren);
+          return parentChildren; // Return the loaded children
         } else {
           setChildren([]);
+          return [];
         }
 
-        if (storedProgress) {
-          const allProgress = JSON.parse(storedProgress);
-          setChildProgress(allProgress);
-        } else {
-          setChildProgress({});
-        }
+        const progressData = storedProgress ? JSON.parse(storedProgress) : {};
+        setChildProgress(progressData);
       }
     } catch (e) {
       console.warn("Failed to load children", e);
       setChildren([]);
       setChildProgress({});
+      return [];
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
-  const saveChildren = async (childrenList) => {
-    try {
-      if (!user?.id) {
-        throw new Error("User ID is missing. Please log in again.");
-      }
+  // Load children from storage
+  useEffect(() => {
+    loadChildren();
+  }, [loadChildren]);
 
-      // Note: This function is kept for backward compatibility
-      // Individual child operations now use backend API directly
-      setChildren(childrenList);
-    } catch (e) {
-      console.warn("Failed to save children", e);
-      throw e;
-    }
-  };
+  useFocusEffect(
+    React.useCallback(() => {
+      loadChildren();
+    }, [loadChildren])
+  );
+
+  // Note: This function is kept for backward compatibility
+  // Individual child operations now use backend API directly
 
   const pickAvatarPhoto = async () => {
     try {
@@ -163,7 +180,15 @@ export default function ParentDashboard() {
   };
 
   const handleAddChild = async () => {
+    // Clear focus before modal state changes to prevent accessibility warnings
+    clearWebFocus();
+
     try {
+      if (!user?.id) {
+        Alert.alert(i18n.t("error"), "Please log in again. User session expired.");
+        return;
+      }
+
       if (!childNickname.trim()) {
         Alert.alert(i18n.t("validationError"), i18n.t("pleaseEnterChildNickname"));
         return;
@@ -181,35 +206,152 @@ export default function ParentDashboard() {
       }
 
       // Create child via backend API
+      // Backend requires parent ID to associate child with parent
+      // Convert learning level to lowercase as backend expects lowercase values
       const childPayload = {
         nickname: childNickname.trim(),
         age: age,
         parent_phone: childParentPhone.trim(),
-        learning_level: childLearningLevel,
+        learning_level: childLearningLevel.toLowerCase(), // Backend expects lowercase: "beginner", "intermediate", "advanced"
+        parent: user.id, // Required: Associate child with logged-in parent
         // Note: avatarUrl will need to be handled separately if backend supports file uploads
       };
 
-      const createdChild = await profilesApi.createChild(childPayload);
-      
-      // Update local state with the created child (backend returns full child object)
-      const updated = [...children, createdChild];
-      setChildren(updated);
-      
-      Alert.alert(i18n.t("success"), i18n.t("childAddedSuccessfully"));
-      
-      // Reset form
+      const response = await profilesApi.createChild(childPayload);
+
+      // Handle different response formats from backend
+      // profilesApi.createChild returns response.data, so response should be the child object
+      // But backend might wrap it: { id, nickname, ... } or { data: { id, ... } } or { child: { id, ... } }
+      let createdChild = response;
+
+      // If response has a 'data' property that's an object, use that
+      if (response && response.data && typeof response.data === 'object' && !Array.isArray(response.data)) {
+        createdChild = response.data;
+      }
+      // If response has a 'child' property, use that
+      else if (response && response.child && typeof response.child === 'object') {
+        createdChild = response.child;
+      }
+      // If response itself is the child object, use it directly
+      // (This is the most common case - response.data from axios is already extracted)
+
+      // Log the response for debugging
+      console.log("Create child response:", response);
+      console.log("Response type:", typeof response);
+      console.log("Response keys:", response ? Object.keys(response) : 'null');
+      console.log("Extracted child:", createdChild);
+      console.log("Child has ID?", createdChild?.id);
+
+      // Reset form first (regardless of response structure)
       setChildNickname("");
       setChildAvatarUri(null);
       setChildAge("");
       setChildParentPhone("");
       setChildLearningLevel(LearningLevel.BEGINNER);
       setSelectedSection("dashboard");
-      
-      // Reload children to refresh the list
-      await loadChildren();
+
+      // Clear any previously selected child to prevent accidental redirect
+      // This ensures we stay on parent dashboard after creating a child
+      await AsyncStorage.removeItem("@selected_child");
+
+      // Check for ID in various possible field names (backend uses 'uuid')
+      const childId = createdChild?.id || createdChild?.uuid || createdChild?.pk || createdChild?.child_id || createdChild?.childId;
+
+      // Normalize: if uuid exists but id doesn't, map uuid to id
+      if (createdChild?.uuid && !createdChild.id) {
+        createdChild.id = createdChild.uuid;
+      }
+
+      // Store the child data we sent for matching after reload
+
+      if (!createdChild || !childId) {
+        // Backend returned child data but without ID, or no child data at all
+        // This can happen if backend needs time to save or returns data before assigning ID
+        console.warn("Child created but response missing ID or data. Reloading children from backend...");
+        if (createdChild) {
+          console.log("Child data received (without ID):", JSON.stringify(createdChild, null, 2));
+        } else {
+          console.log("No child data in response:", JSON.stringify(response, null, 2));
+        }
+
+        // Wait a brief moment for backend to finish saving (if needed)
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Reload children from backend - this will get the child with its ID
+        await loadChildren();
+
+        // Child created successfully - just show success message
+        // User can tap on the child card to go to kids dashboard
+        // Ensure we stay on parent dashboard (not redirect to kids dashboard)
+        Alert.alert(i18n.t("success"), i18n.t("childAddedSuccessfully"), [
+          {
+            text: i18n.t("ok"), onPress: () => {
+              // Explicitly ensure we're on dashboard section
+              setSelectedSection("dashboard");
+            }
+          }
+        ]);
+        return;
+      }
+
+      // If ID was found in a different field, normalize it to 'id'
+      if (!createdChild.id && childId) {
+        createdChild.id = childId;
+      }
+
+      // Update local state with the created child (backend returns full child object)
+      const updated = [...children, createdChild];
+      setChildren(updated);
+
+      // Reload children to refresh the list and ensure we have the latest data
+      // This ensures we have the complete child object with all fields from backend
+      const reloadedChildren = await loadChildren();
+
+      // Child created successfully - just show success message
+      // User can tap on the child card to go to kids dashboard
+      // Ensure we stay on parent dashboard (not redirect to kids dashboard)
+      Alert.alert(i18n.t("success"), i18n.t("childAddedSuccessfully"), [
+        {
+          text: i18n.t("ok"), onPress: () => {
+            // Explicitly ensure we're on dashboard section
+            setSelectedSection("dashboard");
+          }
+        }
+      ]);
     } catch (error) {
       console.error("Error adding child:", error);
-      Alert.alert(i18n.t("error"), "Failed to add child. Please try again.");
+      console.error("Error response data:", error.response?.data);
+
+      // Extract detailed error message
+      let errorMessage = "Failed to add child. Please try again.";
+      if (error.response?.status === 400) {
+        const errorData = error.response.data;
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.nickname) {
+          errorMessage = Array.isArray(errorData.nickname) ? errorData.nickname[0] : errorData.nickname;
+        } else if (errorData.age) {
+          errorMessage = Array.isArray(errorData.age) ? errorData.age[0] : errorData.age;
+        } else if (errorData.parent_phone) {
+          errorMessage = Array.isArray(errorData.parent_phone) ? errorData.parent_phone[0] : errorData.parent_phone;
+        } else if (errorData.learning_level) {
+          const learningLevelError = Array.isArray(errorData.learning_level) ? errorData.learning_level[0] : errorData.learning_level;
+          errorMessage = `Learning Level Error: ${learningLevelError}`;
+        } else if (errorData.parent) {
+          errorMessage = Array.isArray(errorData.parent) ? errorData.parent[0] : errorData.parent;
+        } else if (errorData.non_field_errors) {
+          errorMessage = Array.isArray(errorData.non_field_errors) ? errorData.non_field_errors[0] : errorData.non_field_errors;
+        } else {
+          // Try to get the first error from any field
+          const firstErrorKey = Object.keys(errorData)[0];
+          if (firstErrorKey) {
+            const firstError = errorData[firstErrorKey];
+            errorMessage = Array.isArray(firstError) ? firstError[0] : firstError;
+          }
+        }
+      }
+
+      Alert.alert(i18n.t("error"), errorMessage);
     }
   };
 
@@ -236,24 +378,49 @@ export default function ParentDashboard() {
         return;
       }
 
+      if (!user?.id) {
+        Alert.alert(i18n.t("error"), "Please log in again. User session expired.");
+        return;
+      }
+
       // Update child via backend API
+      // Convert learning level to lowercase as backend expects lowercase values
       const updatePayload = {
         nickname: childNickname.trim(),
         age: age,
         parent_phone: childParentPhone.trim(),
-        learning_level: childLearningLevel,
+        learning_level: childLearningLevel.toLowerCase(), // Backend expects lowercase: "beginner", "intermediate", "advanced"
+        parent: user.id, // Required: Associate child with logged-in parent
       };
 
-      const updatedChild = await profilesApi.updateChild(editingChildId, updatePayload);
-      
+      const response = await profilesApi.patchChild(editingChildId, updatePayload);
+
+      // Handle different response formats from backend
+      let updatedChild = response;
+      if (response && response.data && typeof response.data === 'object') {
+        updatedChild = response.data;
+      } else if (response && response.child && typeof response.child === 'object') {
+        updatedChild = response.child;
+      }
+
+      // Log the response for debugging
+      console.log("Update child response:", response);
+      console.log("Extracted child:", updatedChild);
+
+      // Validate that the updated child has an ID
+      if (!updatedChild || !updatedChild.id) {
+        console.error("Child response structure:", JSON.stringify(response, null, 2));
+        throw new Error(`Child updated but missing ID in response. Response: ${JSON.stringify(response)}`);
+      }
+
       // Update local state
       const updated = children.map((child) =>
         child.id === editingChildId ? updatedChild : child
       );
       setChildren(updated);
-      
+
       Alert.alert(i18n.t("success"), i18n.t("childUpdatedSuccessfully"));
-      
+
       // Reset form
       setChildNickname("");
       setChildAvatarUri(null);
@@ -262,12 +429,43 @@ export default function ParentDashboard() {
       setChildLearningLevel(LearningLevel.BEGINNER);
       setEditingChildId(null);
       setSelectedSection("dashboard");
-      
+
       // Reload children to refresh the list
       await loadChildren();
     } catch (error) {
       console.error("Error editing child:", error);
-      Alert.alert(i18n.t("error"), "Failed to update child. Please try again.");
+      console.error("Error response data:", error.response?.data);
+
+      // Extract detailed error message
+      let errorMessage = "Failed to update child. Please try again.";
+      if (error.response?.status === 400) {
+        const errorData = error.response.data;
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.nickname) {
+          errorMessage = Array.isArray(errorData.nickname) ? errorData.nickname[0] : errorData.nickname;
+        } else if (errorData.age) {
+          errorMessage = Array.isArray(errorData.age) ? errorData.age[0] : errorData.age;
+        } else if (errorData.parent_phone) {
+          errorMessage = Array.isArray(errorData.parent_phone) ? errorData.parent_phone[0] : errorData.parent_phone;
+        } else if (errorData.learning_level) {
+          const learningLevelError = Array.isArray(errorData.learning_level) ? errorData.learning_level[0] : errorData.learning_level;
+          errorMessage = `Learning Level Error: ${learningLevelError}`;
+        } else if (errorData.parent) {
+          errorMessage = Array.isArray(errorData.parent) ? errorData.parent[0] : errorData.parent;
+        } else if (errorData.non_field_errors) {
+          errorMessage = Array.isArray(errorData.non_field_errors) ? errorData.non_field_errors[0] : errorData.non_field_errors;
+        } else {
+          // Try to get the first error from any field
+          const firstErrorKey = Object.keys(errorData)[0];
+          if (firstErrorKey) {
+            const firstError = errorData[firstErrorKey];
+            errorMessage = Array.isArray(firstError) ? firstError[0] : firstError;
+          }
+        }
+      }
+
+      Alert.alert(i18n.t("error"), errorMessage);
     }
   };
 
@@ -284,11 +482,11 @@ export default function ParentDashboard() {
             try {
               // Delete child via backend API
               await profilesApi.deleteChild(childId);
-              
+
               // Update local state
               const updated = children.filter((child) => child.id !== childId);
               setChildren(updated);
-              
+
               Alert.alert(i18n.t("success"), i18n.t("childDeletedSuccessfully"));
             } catch (error) {
               console.error("Failed to delete child:", error);
@@ -306,11 +504,24 @@ export default function ParentDashboard() {
     setChildAvatarUri(child.avatarUrl || null);
     setChildAge(child.age.toString());
     setChildParentPhone(child.parentPhone || "");
-    setChildLearningLevel(child.learningLevel || LearningLevel.BEGINNER);
+    // Convert learning level from backend (lowercase) to uppercase for UI
+    const backendLearningLevel = child.learningLevel || child.learning_level || "";
+    const uiLearningLevel = backendLearningLevel ? backendLearningLevel.toUpperCase() : LearningLevel.BEGINNER;
+    setChildLearningLevel(uiLearningLevel);
     setSelectedSection("editChild");
   };
 
+  // Helper function to clear web focus and prevent aria-hidden warnings
+  const clearWebFocus = () => {
+    if (typeof document !== 'undefined' && document.activeElement) {
+      document.activeElement?.blur();
+    }
+  };
+
   const handleSelectChild = async (child) => {
+    // Clear focus before navigation to prevent accessibility warnings
+    clearWebFocus();
+
     // Store selected child in AsyncStorage for kids dashboard
     try {
       // Ensure child has all required fields
@@ -318,19 +529,20 @@ export default function ParentDashboard() {
         Alert.alert(i18n.t("error"), i18n.t("invalidChildData"));
         return;
       }
-      
+
       // Store the child first
       await AsyncStorage.setItem("@selected_child", JSON.stringify(child));
-      
+
       // Verify it was stored (optional but helps with debugging)
       const verify = await AsyncStorage.getItem("@selected_child");
       if (!verify) {
         Alert.alert(i18n.t("error"), i18n.t("failedToStoreChildSelection"));
         return;
       }
-      
+
       // Navigate to child dashboard (kids.jsx) - App switches to kid mode
-      router.push("/dashboard/kids");
+      router.replace("/dashboard/kids");
+
     } catch (e) {
       console.warn("Failed to store selected child:", e);
       Alert.alert(i18n.t("error"), i18n.t("failedToSelectChild"));
@@ -373,6 +585,9 @@ export default function ParentDashboard() {
 
   // Handle logout - return to login screen
   const handleLogout = async () => {
+    // Clear focus before modal/navigation to prevent accessibility warnings
+    clearWebFocus();
+
     Alert.alert(
       i18n.t("logout"),
       i18n.t("logoutConfirm"),
@@ -419,6 +634,11 @@ export default function ParentDashboard() {
       top: Platform.OS === "ios" ? 50 : 20,
       left: 20,
       zIndex: 1000,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      right: 20,
+      pointerEvents: "box-none",
       ...Platform.select({
         ios: {
           shadowColor: "#000",
@@ -845,7 +1065,8 @@ export default function ParentDashboard() {
   if (loading) {
     return (
       <SafeAreaView style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color="#10B981" />
+        {/* testID added to support comprehensive dashboard tests */}
+        <ActivityIndicator testID="loading-indicator" size="large" color="#10B981" />
         <Text style={{ marginTop: 10, color: "#64748B" }}>{i18n.t("loading")}</Text>
       </SafeAreaView>
     );
@@ -870,6 +1091,31 @@ export default function ParentDashboard() {
         >
           <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
         </TouchableOpacity>
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {/* Language Switcher */}
+          <TouchableOpacity
+            onPress={() => {
+              const languages = ["en", "ti", "am"];
+              const currentIndex = languages.indexOf(language);
+              const nextIndex = (currentIndex + 1) % languages.length;
+              changeLanguage(languages[nextIndex]);
+            }}
+            style={[styles.floatingBackButton, { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8F0" }]}
+            accessibilityLabel={i18n.t('selectLanguage')}
+          >
+            <Ionicons name="language" size={20} color="#2563EB" />
+          </TouchableOpacity>
+
+          {/* Logout Button */}
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={styles.floatingLogoutButton}
+            accessibilityLabel={i18n.t('logout')}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -877,8 +1123,8 @@ export default function ParentDashboard() {
         style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <ScrollView 
-          style={styles.content} 
+        <ScrollView
+          style={styles.content}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
@@ -917,76 +1163,85 @@ export default function ParentDashboard() {
                   </Text>
                 </View>
               ) : (
-                children.map((child) => (
-                  <TouchableOpacity
-                    key={child.id}
-                    style={styles.childCard}
-                    onPress={() => handleSelectChild(child)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.childCardHeader}>
-                      {child.avatarUrl ? (
-                        <Image source={{ uri: child.avatarUrl }} style={styles.childAvatar} />
-                      ) : (
-                        <View style={[styles.childAvatar, styles.childAvatarPlaceholder]}>
-                          <Ionicons name="person" size={24} color="#CBD5E1" />
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.childName}>{child.nickname}</Text>
-                        {/* Progress Icons */}
-                        <View style={styles.progressIcons}>
-                          {(() => {
-                            const progress = childProgress[child.id] || {};
-                            const videosWatched = progress.videosCompleted?.length || 0;
-                            const quizzesCompleted = progress.quizResults?.length || 0;
-                            return (
-                              <>
-                                <View style={styles.progressIconItem}>
-                                  <Ionicons name="videocam" size={16} color="#10B981" />
-                                  <Text style={styles.progressIconText}>{videosWatched}</Text>
-                                </View>
-                                <View style={styles.progressIconItem}>
-                                  <Ionicons name="help-circle" size={16} color="#2563EB" />
-                                  <Text style={styles.progressIconText}>{quizzesCompleted}</Text>
-                                </View>
-                              </>
-                            );
-                          })()}
+                children
+                  .filter((child) => child && (child.id || child.uuid)) // Only render children with valid IDs/UUIDs
+                  .map((child) => {
+                    // Ensure id is set (from uuid if needed) for rendering
+                    if (!child.id && child.uuid) {
+                      child.id = child.uuid;
+                    }
+                    return child;
+                  })
+                  .map((child) => (
+                    <TouchableOpacity
+                      key={child.id}
+                      style={styles.childCard}
+                      onPress={() => handleSelectChild(child)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.childCardHeader}>
+                        {child.avatarUrl ? (
+                          <Image source={{ uri: child.avatarUrl }} style={styles.childAvatar} />
+                        ) : (
+                          <View style={[styles.childAvatar, styles.childAvatarPlaceholder]}>
+                            <Ionicons name="person" size={24} color="#CBD5E1" />
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.childName}>{child.nickname}</Text>
+                          {/* Progress Icons */}
+                          <View style={styles.progressIcons}>
+                            {(() => {
+                              const progress = childProgress[child.id] || {};
+                              const videosWatched = progress.videosCompleted?.length || 0;
+                              const quizzesCompleted = progress.quizResults?.length || 0;
+                              return (
+                                <React.Fragment key={`progress-${child.id}`}>
+                                  <View style={styles.progressIconItem}>
+                                    <Ionicons name="videocam" size={16} color="#10B981" />
+                                    <Text style={styles.progressIconText}>{videosWatched}</Text>
+                                  </View>
+                                  <View style={styles.progressIconItem}>
+                                    <Ionicons name="help-circle" size={16} color="#2563EB" />
+                                    <Text style={styles.progressIconText}>{quizzesCompleted}</Text>
+                                  </View>
+                                </React.Fragment>
+                              );
+                            })()}
+                          </View>
                         </View>
                       </View>
-                    </View>
-                    <View style={styles.childActions}>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.progressButton]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          viewChildProgress(child.id);
-                        }}
-                      >
-                        <Text style={styles.actionButtonText}>{i18n.t("progress")}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.editButton]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          startEditChild(child);
-                        }}
-                      >
-                        <Text style={styles.actionButtonText}>{i18n.t("edit")}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionButton, styles.deleteButton]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleDeleteChild(child.id);
-                        }}
-                      >
-                        <Text style={styles.actionButtonText}>{i18n.t("delete")}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </TouchableOpacity>
-                ))
+                      <View style={styles.childActions}>
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.progressButton]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            viewChildProgress(child.id);
+                          }}
+                        >
+                          <Text style={styles.actionButtonText}>{i18n.t("progress")}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.editButton]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            startEditChild(child);
+                          }}
+                        >
+                          <Text style={styles.actionButtonText}>{i18n.t("edit")}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.deleteButton]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleDeleteChild(child.id);
+                          }}
+                        >
+                          <Text style={styles.actionButtonText}>{i18n.t("delete")}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  ))
               )}
             </>
           )}
