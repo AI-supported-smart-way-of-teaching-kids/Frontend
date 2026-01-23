@@ -5,7 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 type User = {
   id: string;
   name: string;
-  role: "kid" | "parent" | "teacher";
+  role: "parent" | "teacher";
   username?: string;
   email?: string;
   profilePicture?: string;

@@ -5,18 +5,14 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
-
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { UserProvider } from '../contexts/UserContext';
 import { LanguageProvider } from '../contexts/LanguageContext';
 import { ThemeProvider as CustomThemeProvider, useTheme } from '../contexts/ThemeContext';
 import '../i18n'; // Import i18n configuration
-
 SplashScreen.preventAutoHideAsync();
-
 function AppContent() {
   const { colors } = useTheme();
-
   const customTheme = {
     ...DefaultTheme,
     colors: {
@@ -39,20 +35,16 @@ function AppContent() {
     </ThemeProvider>
   );
 }
-
 export default function RootLayout() {
   const [loaded] = useFonts({});
-
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
-
   if (!loaded) {
     return null;
   }
-
   return (
     <CustomThemeProvider>
       <LanguageProvider>

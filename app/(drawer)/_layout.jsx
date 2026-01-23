@@ -1,69 +1,85 @@
 import React from "react";
+import { View } from "react-native";
 import { Drawer } from "expo-router/drawer";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
+import CustomDrawerHeader from "../../components/CustomDrawerHeader";
+import { DrawerItemList } from "@react-navigation/drawer";
 
-
-export default function DrawerLayout() {
+export default function DrawerLayout(props) {
   const { t } = useTranslation();
 
   return (
     <Drawer
-      screenOptions={({ route }) => ({
-        // hide header for kids & teacher dashboards
-        headerShown: !["dashboard/kids", "dashboard/teacher"].includes(route.name),
-      })}
+      drawerContent={(drawerProps) => (
+        <View style={{ flex: 1 }}>
+          <CustomDrawerHeader />
+          <DrawerItemList {...drawerProps} />
+        </View>
+      )}
+      screenOptions={({ route }) => {
+        const isDashboardScreen = route.name?.startsWith("dashboard/");
+
+        return {
+          // Hide native header for all dashboard screens (kids, parent, teacher, etc.)
+          headerShown: !isDashboardScreen,
+
+          // Clean, minimal header for non-dashboard screens
+          headerTitle: "",
+          headerTransparent: true,
+          headerTintColor: "#000",
+          headerStyle: {
+            backgroundColor: "transparent",
+            elevation: 0,
+            shadowOpacity: 0,
+          },
+
+          drawerActiveTintColor: "#2f322fff",
+          drawerInactiveTintColor: "#333",
+          drawerLabelStyle: { fontSize: 16, fontWeight: "500" },
+        };
+      }}
     >
-      {/* Home */}
       <Drawer.Screen
         name="index"
         options={{
-          title: t("home"),
-          drawerIcon: ({ color }) => <Ionicons name="home" size={28} color={color} />,
+          drawerLabel: t("home"), // <--- THIS TEXT STAYS INSIDE THE MENU
+          drawerIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
         }}
       />
-
-      {/* Contacts */}
       <Drawer.Screen
         name="contacts"
         options={{
-          title: t("contacts"),
-          drawerIcon: ({ color }) => <Ionicons name="people" size={28} color={color} />,
+          drawerLabel: t("contacts"),
+          drawerIcon: ({ color }) => <Ionicons name="people" size={24} color={color} />,
         }}
       />
-
-      {/* Settings */}
       <Drawer.Screen
         name="settings"
         options={{
-          title: t("settings"),
-          drawerIcon: ({ color }) => <Ionicons name="settings" size={28} color={color} />,
+          drawerLabel: t("settings"),
+          drawerIcon: ({ color }) => <Ionicons name="settings" size={24} color={color} />,
         }}
       />
-
-      {/* About */}
       <Drawer.Screen
         name="about"
         options={{
-          title: t("about"),
-          drawerIcon: ({ color }) => <Ionicons name="information-circle" size={28} color={color} />,
+          drawerLabel: t("about"),
+          drawerIcon: ({ color }) => <Ionicons name="information-circle" size={24} color={color} />,
         }}
       />
-      {/* Login */}
       <Drawer.Screen
         name="login"
         options={{
-          title: t("login"),
-          drawerIcon: ({ color }) => <Ionicons name="log-in-outline" size={28} color={color} />,
+          drawerLabel: t("login"),
+          drawerIcon: ({ color }) => <Ionicons name="log-in-outline" size={24} color={color} />,
         }}
       />
-
-      {/* Exit */}
       <Drawer.Screen
         name="Exit"
         options={{
-          title: t("exit"),
-          drawerIcon: ({ color }) => <Ionicons name="exit-outline" size={28} color={color} />,
+          drawerLabel: t("exit"),
+          drawerIcon: ({ color }) => <Ionicons name="exit-outline" size={24} color={color} />,
         }}
       />
     </Drawer>

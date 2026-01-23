@@ -18,7 +18,7 @@ export default function Exit() {
         onPress: async () => {
           logout();
           await AsyncStorage.removeItem("role");
-          router.replace("/login");
+          router.replace("/(drawer)/(tabs)/login");
         },
       },
     ]);
