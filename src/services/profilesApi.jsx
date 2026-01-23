@@ -18,10 +18,12 @@ export const login = async (credentials) => {
 };
 
 export const register = async (payload) => {
-  // POST /api/profiles/users/
-  const response = await api.post("/profiles/users/", payload);
+  // POST /api/profiles/auth/register/
+  const response = await api.post("profiles/auth/register/", payload);
   return response.data;
 };
+
+
 
 export const refreshToken = async (refresh) => {
   // POST /api/profiles/auth/refresh/

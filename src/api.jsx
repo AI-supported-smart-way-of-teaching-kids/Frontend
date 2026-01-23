@@ -48,7 +48,7 @@ api.interceptors.request.use(async (config) => {
     config.data.constructor?.name === 'FormData'
   );
 
-  console.log(`[API REQUEST] ${config.method.toUpperCase()} ${config.url}`, isFormData ? "(FormData)" : "(JSON)");
+  console.log(`[API REQUEST] ${(config.method || 'GET').toUpperCase()} ${config.url}`, isFormData ? "(FormData)" : "(JSON)");
 
   if (isFormData) {
     console.log("API: FormData detected. URL:", config.url);
